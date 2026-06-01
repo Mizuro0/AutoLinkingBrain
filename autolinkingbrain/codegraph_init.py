@@ -219,7 +219,7 @@ def init_all(
 ) -> int:
     if not repos:
         print("No repos discovered.", file=sys.stderr)
-        print("Open a workspace folder in Cursor or set CODEGRAPH_WORKSPACE=D:\\feature", file=sys.stderr)
+        print("Open a workspace folder in Cursor or set CODEGRAPH_WORKSPACE=/path/to/monorepo", file=sys.stderr)
         return 2
 
     if not codegraph_bin():

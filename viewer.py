@@ -75,7 +75,7 @@ st.info(
     "**Как смотреть проект `backend`:** в режиме «Конкретный проект» выберите или введите slug **`backend`** "
     "(канал в Mem0 — `project_backend`, это **имя корневой папки** workspace в Cursor). "
     "Нажмите **«Загрузить память»** — список сам не обновляется. "
-    "После ответа агента смотрите **`mcp_server/.cursor/mem0_autolog_last.txt`** — там последний статус хука (Cursor не всегда передаёт `env` из hooks.json). "
+    "После ответа агента смотрите **`<repo>/.cursor/mem0_autolog_last.txt`** — там последний статус хука (Cursor не всегда передаёт `env` из hooks.json). "
     "Подробный лог: тот же каталог **`mem0_autolog_hook.log`** или файл-маркер **`mem0_autolog_debug.on`** в `.cursor`."
 )
 
@@ -129,7 +129,7 @@ elif scope == "Конкретный проект":
             project_name = choice
     else:
         st.info("В коллекции пока нет записей с `user_id` вида `project_*`. Можно ввести имя вручную.")
-        project_name = st.text_input("Имя папки проекта (например, mcp_server):", "")
+        project_name = st.text_input("Имя папки проекта (например, autolinkingbrain):", "")
 
     if project_name.strip():
         user_id = f"project_{project_name.strip()}"

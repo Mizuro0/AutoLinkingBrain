@@ -11,7 +11,7 @@ $shortcut = $Wsh.CreateShortcut($lnkPath)
 $shortcut.TargetPath = "powershell.exe"
 $shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$startViewer`""
 $shortcut.WorkingDirectory = $RepoRoot
-$shortcut.Description = "Mem0 Streamlit viewer (mcp_server)"
+$shortcut.Description = "AutoLinkingBrain viewer"
 $shortcut.Save()
 
 Write-Host "Shortcut created: $lnkPath"

@@ -5,7 +5,7 @@ Stores one-line English facts (no Ollama) so retrieveChain can recall which file
 were read/edited and what was searched. Complements afterAgentResponse (final reply).
 
 Env: MEM0_TOOLLOG=1, MEM0_TOOLLOG_DEDUPE_SEC=120, MEM0_TOOLLOG_TARGET=project
-Debug: MEM0_TOOLLOG_DEBUG=1 or file mcp_server/.cursor/mem0_toollog_debug.on
+Debug: MEM0_TOOLLOG_DEBUG=1 or file <repo>/.cursor/mem0_toollog_debug.on
 """
 from __future__ import annotations
 

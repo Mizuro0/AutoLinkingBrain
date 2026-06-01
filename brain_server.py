@@ -71,21 +71,15 @@ _ALLOWED_LINK_TYPES = frozenset({"module", "api"})
 INDEXING_MARK_TOKEN = "FINAL_INDEXING_MARK"
 INDEXING_STALE_DAYS = 7
 
-# Имя папки cwd вроде профиля Windows → в логе получается project_user; хуки при этом пишут project_<корень_repo>.
-_SLUG_SUSPICIOUS = frozenset(
-    {
-        "user",
-        "users",
-        "home",
-        "desktop",
-        "documents",
-        "downloads",
-        "appdata",
-        "local",
-        "public",
-    }
-)
+# Warn when MCP slug looks like a generic OS profile folder (optional; MEM0_SUSPICIOUS_SLUGS).
 _slug_misleading_warned = False
+
+
+def _suspicious_slugs() -> frozenset[str]:
+    raw = os.environ.get("MEM0_SUSPICIOUS_SLUGS", "").strip()
+    if not raw:
+        return frozenset()
+    return frozenset(s.strip().lower() for s in raw.replace(",", ";").split(";") if s.strip())
 
 # Все MCP roots (не только первый) — для monorepo-папок вроде feature/{backend,crm,...}.
 _mcp_roots_paths_cache: list[str] = []
@@ -144,12 +138,13 @@ def get_project_id(
         not _slug_misleading_warned
         and not (project_slug or "").strip()
         and not (context_path or "").strip()
-        and slug.lower() in _SLUG_SUSPICIOUS
+        and slug.lower() in _suspicious_slugs()
     ):
         _slug_misleading_warned = True
         logging.getLogger(__name__).warning(
             "Mem0 MCP project slug is %r (folder name of cwd). Ensure MEM0_USE_MCP_ROOTS=1 and client "
-            "supports roots/list, or set MEM0_PROJECT_SLUG / MCP cwd to ${workspaceFolder}.",
+            "supports roots/list, or set MEM0_PROJECT_SLUG / MCP cwd to ${workspaceFolder}. "
+            "Optional: MEM0_SUSPICIOUS_SLUGS to enable this warning.",
             slug,
         )
     return slug

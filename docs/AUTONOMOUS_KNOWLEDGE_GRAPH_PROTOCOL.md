@@ -19,7 +19,7 @@ In Cursor’s agent/composer bridge, **`server` is often not** the short key fro
    Example: **`user-AutoLinkingBrain`**.
 2. **Project-scoped server** (workspace `.cursor/mcp.json` or merged project config): use  
    **`project-<n>-<workspaceFolderBasename>-<McpServersKey>`**  
-   Example when the repo root folder is `mcp_server`: **`project-0-mcp_server-AutoLinkingBrain`**.  
+   Example when the repo root folder is `autolinkingbrain`: **`project-0-autolinkingbrain-AutoLinkingBrain`**.  
    The index **`<n>`** or basename can differ per window; if a call fails, re-read the current id from logs/UI.
 
 Prefer **one** MCP registration (usually **global** + `"cwd": "${workspaceFolder}"`) so the stable id **`user-AutoLinkingBrain`** is enough across repos.

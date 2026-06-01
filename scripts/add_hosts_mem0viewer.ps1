@@ -2,7 +2,7 @@
 # Run elevated: right-click PowerShell -> Run as administrator.
 $ErrorActionPreference = "Stop"
 $hostsPath = "$env:SystemRoot\System32\drivers\etc\hosts"
-$marker = "# mcp_server mem0viewer"
+$marker = "# autolinkingbrain mem0viewer"
 $line = "127.0.0.1 mem0viewer $marker"
 $content = Get-Content -LiteralPath $hostsPath -Raw -Encoding Default
 if ($content -match "mem0viewer") {

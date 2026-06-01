@@ -48,7 +48,12 @@ python brain.py install --pull-models
 | `MEM0_STALE_DAYS` | Порог «устарело» в viewer | `90` |
 | `VIEWER_PORT` | Порт viewer | `8501` |
 | `CODEGRAPH_WORKSPACE` | Корень monorepo для discovery | авто |
-| `CODEGRAPH_EXCLUDE_NAMES` | Исключения при discovery | см. codegraph_init |
+| `CODEGRAPH_EXCLUDE_NAMES` | Имена папок — пропуск | не задано |
+| `CODEGRAPH_EXCLUDE_PATHS` | Сегменты пути — пропуск | не задано |
+| `CODEGRAPH_CONTAINER_NAMES` | Имена «контейнеров» для deep-scan соседей | структура (2+ child repo) |
+| `CODEGRAPH_DEPRIORITIZE_PATHS` | Сегменты пути — ниже приоритет при dedupe | не задано |
+| `CODEGRAPH_PREFER_PATHS` | Сегменты пути — выше приоритет при dedupe | не задано |
+| `MEM0_SUSPICIOUS_SLUGS` | Предупреждение если slug «подозрительный» | не задано |
 
 Полный список хуков: см. раздел «Автозапись» в исторической версии README или env в [hooks.json.example](../config/examples/hooks.json.example).
 

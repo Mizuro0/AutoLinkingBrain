@@ -1,10 +1,23 @@
 param(
-    [string[]]$SourceSlugs = @("gemini_filters", "gemini_marking"),
-    [string[]]$Targets = @("backend", "crm_server", "vet_pathomorphology", "reference_client", "reference_service"),
+    [string[]]$SourceSlugs = @(),
+    [string[]]$Targets = @(),
     [switch]$Apply
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($SourceSlugs.Count -eq 0 -or $Targets.Count -eq 0) {
+    Write-Host @"
+Usage: migrate_project_groups.ps1 -SourceSlugs <old> -Targets <slug...> [-Apply]
+
+Example (dry-run):
+  .\scripts\migrate_project_groups.ps1 -SourceSlugs old_monolith -Targets backend,frontend
+
+Apply:
+  .\scripts\migrate_project_groups.ps1 -SourceSlugs old_monolith -Targets backend,frontend -Apply
+"@
+    exit 1
+}
 
 # Mem0 OSS telemetry hits PostHog; disable when DNS/firewall blocks us.i.posthog.com.
 if (-not $env:MEM0_TELEMETRY) {

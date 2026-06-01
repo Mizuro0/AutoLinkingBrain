@@ -133,7 +133,7 @@ def cmd_codegraph(args: argparse.Namespace) -> int:
         return status_all(repos)
 
     if not repos:
-        print("No repos discovered. Set CODEGRAPH_WORKSPACE or open projects near mcp_server.")
+        print("No repos discovered. Set CODEGRAPH_WORKSPACE or open projects near this repo.")
         return 2
 
     if not args.quiet:

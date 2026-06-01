@@ -19,13 +19,14 @@ if str(ROOT) not in sys.path:
 
 from mem0 import Memory
 
+from autolinkingbrain.mem0_project_slug import sanitize_slug
 from autolinkingbrain.mem0_settings import mem0_vector_config
 
 logging.getLogger("chromadb").setLevel(logging.ERROR)
 
 GLOBAL_ID = "global_skills"
 TOPOLOGY_ID = "global_topology"
-PROJECT_ID = "mcp_server"
+PROJECT_ID = sanitize_slug(ROOT.name)
 PROJECT_USER = f"project_{PROJECT_ID}"
 NOW = datetime.now().isoformat()
 
@@ -47,7 +48,7 @@ def main() -> None:
         ),
         (
             PROJECT_USER,
-            f"[SYSTEM] [INDEXING] (Updated: {NOW}): FINAL_INDEXING_MARK (completed_at={NOW}) seed_memory.py; проект mcp_server: MCP (FastMCP) + Mem0 + Ollama, mem0_settings.py.",
+            f"[SYSTEM] [INDEXING] (Updated: {NOW}): FINAL_INDEXING_MARK (completed_at={NOW}) seed_memory.py; project {PROJECT_ID}: MCP (FastMCP) + Mem0 + Ollama, autolinkingbrain package.",
         ),
         (
             PROJECT_USER,
@@ -55,11 +56,11 @@ def main() -> None:
         ),
         (
             TOPOLOGY_ID,
-            "[LINK] [demo-booking] depends on [mcp_server] via [API]. Contract: чтение долгосрочной памяти через MCP tools (пример входящей связи для health check).",
+            f"[LINK] [demo-booking] depends on [{PROJECT_ID}] via [API]. Contract: long-term memory read via MCP tools (incoming link example for health check).",
         ),
         (
             TOPOLOGY_ID,
-            "[LINK] [mcp_server] depends on [ollama] via [API]. Contract: llama3.2 + nomic-embed-text на localhost для add/search.",
+            f"[LINK] [{PROJECT_ID}] depends on [ollama] via [API]. Contract: llama3.2 + nomic-embed-text on localhost for add/search.",
         ),
     ]
 
@@ -67,7 +68,7 @@ def main() -> None:
         mem.add(text, user_id=user_id)
         print(f"OK user_id={user_id!r} len={len(text)}")
 
-    print("Done. In Streamlit check: global_skills, project_mcp_server, global_topology.")
+    print(f"Done. In viewer check: global_skills, project_{PROJECT_ID}, global_topology.")
 
 
 if __name__ == "__main__":

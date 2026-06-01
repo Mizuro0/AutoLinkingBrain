@@ -25,25 +25,6 @@ _PROJECT_DIR_MARKERS = (
     "Gemfile",
 )
 
-_PROJECT_CONTAINER_NAMES = frozenset(
-    {
-        "codes",
-        "code",
-        "projects",
-        "project",
-        "repos",
-        "repo",
-        "dev",
-        "development",
-        "workspace",
-        "workspaces",
-        "src",
-        "git",
-        "feature",
-        "features",
-        "gemini_marking",
-    }
-)
 _PATH_IN_TEXT_RE = re.compile(
     r"(?:^|[\s\"'`(])"
     r"("
@@ -52,6 +33,19 @@ _PATH_IN_TEXT_RE = re.compile(
     r"|[a-zA-Z][\w.\-]*(?:[/\\][\w.\-/\\]+)+"
     r")",
 )
+
+
+def _env_name_set(key: str) -> set[str]:
+    """Lowercase path segment / folder names from a semicolon- or comma-separated env var."""
+    raw = os.environ.get(key, "").strip()
+    if not raw:
+        return set()
+    parts: list[str] = []
+    for chunk in raw.replace(",", ";").split(";"):
+        name = chunk.strip().lower()
+        if name:
+            parts.append(name)
+    return set(parts)
 
 
 def sanitize_slug(raw: str) -> str:
@@ -314,21 +308,30 @@ def _should_skip_repo_path(path: pathlib.Path) -> bool:
     name = path.name.lower()
     if name.endswith(".git"):
         return True
-    skip_names = {
-        s.strip().lower()
-        for s in os.environ.get("CODEGRAPH_EXCLUDE_NAMES", "python").split(";")
-        if s.strip()
-    }
-    if name in skip_names:
+    if name in _env_name_set("CODEGRAPH_EXCLUDE_NAMES"):
         return True
-    skip_parts = {
-        s.strip().lower()
-        for s in os.environ.get("CODEGRAPH_EXCLUDE_PATHS", "").split(";")
-        if s.strip()
-    }
+    skip_parts = _env_name_set("CODEGRAPH_EXCLUDE_PATHS")
     if skip_parts & {part.lower() for part in path.parts}:
         return True
     return False
+
+
+def _looks_like_repo_container(path: pathlib.Path) -> bool:
+    """Structural: folder groups multiple distinct child repos (no name list required)."""
+    return len(_direct_child_repos(path)) >= 2
+
+
+def _should_scan_sibling_container(path: pathlib.Path) -> bool:
+    """
+    Deep-scan a sibling folder for nested repos.
+
+    CODEGRAPH_CONTAINER_NAMES — explicit folder names (optional).
+    When unset, only folders with 2+ child repos qualify (structural heuristic).
+    """
+    explicit = _env_name_set("CODEGRAPH_CONTAINER_NAMES")
+    if explicit:
+        return path.name.lower() in explicit
+    return _looks_like_repo_container(path)
 
 
 def _direct_child_repos(path: pathlib.Path) -> list[pathlib.Path]:
@@ -357,19 +360,22 @@ def _direct_child_repos(path: pathlib.Path) -> list[pathlib.Path]:
 
 def _dedupe_repo_paths_by_name(paths: list[pathlib.Path]) -> list[pathlib.Path]:
     """
-    One path per project folder name. Prefer D:\\codes\\* over copy folders (e.g. gemini_marking).
+    One path per project folder name.
+
+    CODEGRAPH_DEPRIORITIZE_PATHS — path segments that lose ties (e.g. archive copies).
+    CODEGRAPH_PREFER_PATHS — path segments that win ties (e.g. your primary workspace root).
     """
-    skip_parts = {
-        p.strip().lower()
-        for p in os.environ.get("CODEGRAPH_DEPRIORITIZE_PATHS", "gemini_marking").split(";")
-        if p.strip()
-    }
+    deprioritize = _env_name_set("CODEGRAPH_DEPRIORITIZE_PATHS")
+    prefer = _env_name_set("CODEGRAPH_PREFER_PATHS")
 
     def score(p: pathlib.Path) -> tuple:
         parts_lower = {part.lower() for part in p.parts}
-        deprioritize = 1 if parts_lower & skip_parts else 0
-        in_codes = 0 if "codes" in parts_lower else 1
-        return (deprioritize, in_codes, len(p.parts), str(p).lower())
+        return (
+            1 if deprioritize and parts_lower & deprioritize else 0,
+            0 if prefer and parts_lower & prefer else (1 if prefer else 0),
+            len(p.parts),
+            str(p).lower(),
+        )
 
     by_name: dict[str, pathlib.Path] = {}
     for p in paths:
@@ -411,7 +417,8 @@ def discover_repo_paths_for_workspace(
     """
     Filesystem paths of repos under workspace(s) — same rules as discover_project_slugs_for_workspace.
 
-    Also scans sibling git repos next to server_root (e.g. D:\\codes\\* when mcp_server lives in D:\\codes).
+    Also scans sibling git repos next to server_root (e.g. ../backend when AutoLinkingBrain
+    lives alongside other clones in ~/projects).
     """
     if scan_siblings is None:
         scan_siblings = os.environ.get("CODEGRAPH_SCAN_SIBLINGS", "1").strip().lower() not in (
@@ -469,8 +476,7 @@ def discover_repo_paths_for_workspace(
             for sib in siblings:
                 if not sib.is_dir() or sib.name.startswith("."):
                     continue
-                name_lower = sib.name.lower()
-                if name_lower in _PROJECT_CONTAINER_NAMES:
+                if _should_scan_sibling_container(sib):
                     register(sib)
                     _scan_repo_tree(sib, register, max_depth=max(scan_depth, 1))
                 elif slug_from_git_marker(sib) or looks_like_project_dir(sib):

@@ -35,7 +35,7 @@ python brain.py start
 
 **Requirements:** Python 3.10+, [Ollama](https://ollama.com/) with `llama3.2` and `nomic-embed-text`.
 
-After install, reload Cursor (**Developer: Reload Window**). See [config/examples/](config/examples/) for manual MCP/hooks templates.
+After install, reload Cursor (**Developer: Reload Window**). See [config/examples/](config/examples/) for MCP/hooks templates and [discovery.env.example](config/examples/discovery.env.example) for optional path/slug overrides.
 
 ## CLI (`brain.py`)
 

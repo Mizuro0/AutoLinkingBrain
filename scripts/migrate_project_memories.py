@@ -51,7 +51,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--targets",
         nargs="+",
-        help="Target slugs without 'project_' prefix (example: backend crm_server lis_vet).",
+        help="Target slugs without 'project_' prefix (example: backend frontend api_gateway).",
     )
     p.add_argument(
         "--top-k",
@@ -101,9 +101,6 @@ def _list_channels(mem0: Memory, top_k: int = 5000) -> int:
                         slugs.add(uid[len("project_") :])
     except Exception:
         pass
-
-    for extra in ("feature", "backend", "crm", "crm_server", "lis", "vet", "lis_vet", "mcp_server"):
-        slugs.add(extra)
 
     rows_by_channel: list[tuple[str, int]] = []
     for slug in sorted(slugs):
