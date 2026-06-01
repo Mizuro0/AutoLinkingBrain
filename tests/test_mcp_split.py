@@ -55,7 +55,9 @@ def test_merge_mcp_includes_telemetry(tmp_path: Path, monkeypatch: pytest.Monkey
     hooks = json.loads(hooks_path.read_text(encoding="utf-8"))
     assert hooks["hooks"]["sessionStart"][0]["env"]["MEM0_TELEMETRY"] == "false"
     skill = tmp_path / ".cursor" / "skills" / "autolinking-brain-mcp" / "SKILL.md"
+    rule = tmp_path / ".cursor" / "rules" / "autolinking-brain.mdc"
     assert skill.is_file()
+    assert rule.is_file()
 
 
 def test_register_tools_wires_all_domains() -> None:

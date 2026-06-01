@@ -99,14 +99,17 @@ Full list: [docs/README.ru.md](docs/README.ru.md#переменные-окруж
 
 Agent protocol: [docs/AUTONOMOUS_KNOWLEDGE_GRAPH_PROTOCOL.md](docs/AUTONOMOUS_KNOWLEDGE_GRAPH_PROTOCOL.md)
 
-### Cursor skill & global rules
+### Cursor skill & project rules
 
-`python brain.py install` (and each MCP server start) syncs agent assets from `config/cursor/`:
+`python brain.py install` and each MCP server start sync agent assets from `config/cursor/`:
 
-| Template | Global target |
-|----------|---------------|
-| `config/cursor/skills/autolinking-brain-mcp/SKILL.md` | `~/.cursor/skills/autolinking-brain-mcp/` |
-| `config/cursor/rules/autolinking-brain.mdc` | `~/.cursor/rules/` |
+| Template | Target | Cursor UI |
+|----------|--------|-----------|
+| `config/cursor/skills/.../SKILL.md` | `~/.cursor/skills/autolinking-brain-mcp/` | Agent Skills |
+| `config/cursor/rules/autolinking-brain.mdc` | **`<workspace>/.cursor/rules/`** | **Settings → Rules → Project Rules** |
+
+MCP runs with `cwd: ${workspaceFolder}`, so the rule is copied into **each opened project** on first MCP connection.  
+`~/.cursor/rules/` is **not** used by Cursor Settings.
 
 Disable sync: `MEM0_SKIP_CURSOR_AGENT_SYNC=1`. Details: [config/cursor/README.md](config/cursor/README.md).
 

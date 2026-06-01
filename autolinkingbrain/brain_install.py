@@ -238,7 +238,7 @@ def merge_cursor_config(
     if not skip_hooks:
         written.append(_merge_hooks(interpreter))
     if not skip_agent_assets:
-        written.extend(sync_cursor_agent_assets())
+        written.extend(sync_cursor_agent_assets(ROOT))
     return written
 
 
@@ -284,7 +284,7 @@ def run_install(
         print(f"  -> {p}")
 
     print("==> Cursor agent skill + rules")
-    synced = sync_cursor_agent_assets()
+    synced = sync_cursor_agent_assets(ROOT)
     if synced:
         for p in synced:
             print(f"  -> {p}")
@@ -336,7 +336,7 @@ def run_setup(
         print("==> hooks.json OK")
 
     print("==> Cursor agent skill + rules")
-    synced = sync_cursor_agent_assets()
+    synced = sync_cursor_agent_assets(ROOT)
     for p in synced:
         print(f"  -> {p}")
     if not synced:

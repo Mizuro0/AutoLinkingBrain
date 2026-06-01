@@ -36,14 +36,15 @@ python brain.py install --pull-models
 
 `start.bat` **не** поднимает MCP — только `setup` + viewer на порту 8501.
 
-## Skill и global rules (Cursor Agent)
+## Skill и project rules (Cursor Agent)
 
-`python brain.py install` и каждый старт MCP (`brain_server.py`) синхронизируют:
+| Шаблон | Куда | UI Cursor |
+|--------|------|-----------|
+| `config/cursor/skills/.../SKILL.md` | `~/.cursor/skills/autolinking-brain-mcp/` | Skills |
+| `config/cursor/rules/autolinking-brain.mdc` | **`<workspace>/.cursor/rules/`** | **Settings → Rules → Project Rules** |
 
-| Шаблон в репо | Куда |
-|---------------|------|
-| `config/cursor/skills/autolinking-brain-mcp/SKILL.md` | `~/.cursor/skills/autolinking-brain-mcp/` |
-| `config/cursor/rules/autolinking-brain.mdc` | `~/.cursor/rules/` |
+MCP с `"cwd": "${workspaceFolder}"` копирует rule в **каждый открытый проект** при старте сервера.  
+Папка `~/.cursor/rules/` **не** отображается в Settings.
 
 Отключить: `MEM0_SKIP_CURSOR_AGENT_SYNC=1`. Подробнее: [config/cursor/README.md](../config/cursor/README.md).
 

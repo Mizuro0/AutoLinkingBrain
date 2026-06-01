@@ -181,14 +181,14 @@ Slug резолвится в `autolinkingbrain/mem0_project_slug.py` (monorepo, 
 
 Hooks и MCP используют одни и те же `mem0_*` модули и Chroma, но hooks **не** вызывают `brain_server.py`.
 
-## Cursor Agent: skill + global rules
+## Cursor Agent: skill + project rules
 
-Шаблоны в `config/cursor/` → глобально при install и старте MCP:
+| Файл | Куда | UI |
+|------|------|-----|
+| `config/cursor/skills/.../SKILL.md` | `~/.cursor/skills/` | Agent Skills |
+| `config/cursor/rules/autolinking-brain.mdc` | `<workspace>/.cursor/rules/` | Settings → Project Rules |
 
-| Файл | Назначение |
-|------|------------|
-| `skills/autolinking-brain-mcp/SKILL.md` | Agent Skill (graph-first, reindex, dual MCP) |
-| `rules/autolinking-brain.mdc` | Global rule (`~/.cursor/rules/`, Apply Intelligently) |
+Синхронизация при install (repo root) и при старте MCP (`cwd` = workspace). `~/.cursor/rules/` Cursor **не** показывает.
 
 Синхронизация: `autolinkingbrain/cursor_agent.py`. Отключить: `MEM0_SKIP_CURSOR_AGENT_SYNC=1`.
 
