@@ -120,3 +120,12 @@ Restart viewer after updates: `python brain.py start`
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## Development
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+python -m pytest tests/ -q
+```
+
+CI runs the same suite on push/PR to `main` (`.github/workflows/ci.yml`).

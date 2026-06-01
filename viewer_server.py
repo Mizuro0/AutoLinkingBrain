@@ -22,14 +22,10 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import chromadb
-from chromadb.config import Settings
-from mem0 import Memory
-
-from autolinkingbrain.brain_link_store import load_cross_links
-from autolinkingbrain.mem0_kb_log import count_get_all_rows, log_mem0
-from autolinkingbrain.mem0_lifecycle import is_stale_memory, stale_days_default
-from autolinkingbrain.mem0_settings import CHROMA_COLLECTION, chroma_path_resolved, mem0_vector_config
+from autolinkingbrain.mem0_fetch import fetch_all_memories, get_memory
+from autolinkingbrain.mem0_kb_log import log_mem0
+from autolinkingbrain.mem0_lifecycle import stale_days_default
+from autolinkingbrain.mem0_settings import CHROMA_COLLECTION, chroma_path_resolved
 
 WEB_ROOT = ROOT / "viewer_web"
 
@@ -46,123 +42,6 @@ _MIMES = {
     ".ttf": "font/ttf",
     ".map": "application/json",
 }
-
-
-_mem: Memory | None = None
-
-
-def _memory() -> Memory:
-    """Ленивая инициализация Mem0 — чтобы отдача статики не требовала Ollama."""
-    global _mem
-    if _mem is None:
-        _mem = Memory.from_config(config_dict=mem0_vector_config())
-    return _mem
-
-
-def _classify_scope(user_id: str) -> str:
-    if user_id == "global_skills":
-        return "global"
-    if user_id == "global_topology":
-        return "topology"
-    if user_id.startswith("project_"):
-        return "project"
-    return "other"
-
-
-def _discover_user_ids() -> list[str]:
-    """Все уникальные user_id из метаданных Chroma (global_*, project_*, прочее)."""
-    client = chromadb.PersistentClient(
-        path=str(chroma_path_resolved()),
-        settings=Settings(anonymized_telemetry=False),
-    )
-    col = client.get_collection(CHROMA_COLLECTION)
-
-    seen: set[str] = set()
-    offset = 0
-    batch_size = 2000
-    while True:
-        batch = col.get(include=["metadatas"], limit=batch_size, offset=offset)
-        metas = batch.get("metadatas") or []
-        if not metas:
-            break
-        for meta in metas:
-            uid = (meta or {}).get("user_id")
-            if isinstance(uid, str) and uid:
-                seen.add(uid)
-        if len(metas) < batch_size:
-            break
-        offset += batch_size
-
-    def _sort_key(uid: str) -> tuple[int, str]:
-        scope = _classify_scope(uid)
-        order = {"global": 0, "topology": 1, "project": 2, "other": 3}
-        return order.get(scope, 9), uid
-
-    return sorted(seen, key=_sort_key)
-
-
-def _fetch_all() -> dict:
-    """Возвращает плоский список узлов + счётчики по каналам."""
-    try:
-        user_ids = _discover_user_ids()
-    except Exception as exc:
-        return {
-            "error": f"chroma_unavailable: {exc}",
-            "nodes": [],
-            "groups": {},
-        }
-
-    nodes: list[dict] = []
-    groups: dict[str, int] = {}
-
-    try:
-        mem = _memory()
-    except Exception as exc:
-        return {"error": f"mem0_unavailable: {exc}", "nodes": [], "groups": {}}
-
-    for uid in user_ids:
-        try:
-            raw = mem.get_all(filters={"user_id": uid}, top_k=500)
-            log_mem0(
-                "read",
-                "viewer.brain.get_all",
-                user_id=uid,
-                top_k=500,
-                rows=count_get_all_rows(raw),
-            )
-            rows = raw.get("results", []) if isinstance(raw, dict) else (raw or [])
-        except Exception:
-            rows = []
-        groups[uid] = len(rows)
-        for row in rows:
-            meta = row.get("metadata") or {}
-            updated_at = row.get("updated_at") or meta.get("updated_at") or ""
-            created_at = row.get("created_at") or meta.get("created_at") or ""
-            node = {
-                "id": str(row.get("id", "")),
-                "text": row.get("memory") or "",
-                "user_id": uid,
-                "scope": _classify_scope(uid),
-                "metadata": meta,
-                "updated_at": updated_at,
-                "created_at": created_at,
-            }
-            node["stale"] = is_stale_memory(
-                {"updated_at": updated_at, "created_at": created_at},
-            )
-            nodes.append(node)
-    cross = load_cross_links()
-    out: dict = {
-        "nodes": nodes,
-        "groups": groups,
-        "stale_days": stale_days_default(),
-    }
-    # Для совместимости с фронтом: edges с полем rationale для агента/человека
-    if isinstance(cross, dict) and isinstance(cross.get("edges"), list):
-        out["cross_links"] = cross
-    else:
-        out["cross_links"] = {"version": 1, "edges": []}
-    return out
 
 
 def _fetch_metrics(*, days: float = 7.0, recent: int = 80) -> dict:
@@ -196,7 +75,10 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/") or "/"
         if path == "/api/memories":
-            return self._send_json(200, _fetch_all())
+            return self._send_json(
+                200,
+                fetch_all_memories(log_source="viewer.brain.get_all"),
+            )
         if path == "/api/metrics":
             qs = parse_qs(parsed.query)
             try:
@@ -232,7 +114,7 @@ class Handler(BaseHTTPRequestHandler):
             if not mid:
                 return self._send_json(400, {"error": "empty id"})
             try:
-                _memory().delete(mid)
+                get_memory().delete(mid)
                 log_mem0("write", "viewer.brain.delete", memory_id=mid)
             except Exception as exc:
                 return self._send_json(500, {"error": str(exc)})
@@ -251,7 +133,7 @@ class Handler(BaseHTTPRequestHandler):
         if not user_id:
             return self._send_json(400, {"error": "empty user_id"})
         try:
-            mem = _memory()
+            mem = get_memory()
             raw = mem.get_all(filters={"user_id": user_id}, top_k=1000)
             rows = raw.get("results", []) if isinstance(raw, dict) else (raw or [])
         except Exception as exc:
@@ -287,7 +169,7 @@ class Handler(BaseHTTPRequestHandler):
         ids = body.get("ids") or []
         if not isinstance(ids, list) or not ids:
             return self._send_json(400, {"error": "ids list required"})
-        mem = _memory()
+        mem = get_memory()
         deleted, failed = 0, []
         for mid in ids:
             mid_str = str(mid)

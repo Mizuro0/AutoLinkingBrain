@@ -78,6 +78,7 @@ Slug резолвится в `autolinkingbrain/mem0_project_slug.py` (monorepo, 
 | `mem0_privacy` / `mem0_provenance` | Редакция секретов, метаданные источника |
 | `mem0_lifecycle` | Stale detection (viewer badges, `listStaleMemories`) |
 | `mem0_kb_log` | Legacy KB log + dual-write в metrics |
+| `mem0_fetch` | `fetch_all_memories()` — загрузка всех каналов (viewer + scripts) |
 | `brain_metrics` | `brain_events.jsonl`, aggregation, Ops API |
 | `brain_link_store` | `memory_cross_links.json` CRUD |
 | `cross_link_mem0_sync` | Sync JSON → Mem0 metadata + topology |

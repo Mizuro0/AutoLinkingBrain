@@ -3,6 +3,7 @@ chroma_data/
 __pycache__/
 *.py[cod]
 *.pyo
+.pytest_cache/
 .env
 .python-version
 

@@ -33,7 +33,7 @@ if _SERVER_DIR not in sys.path:
 os.environ.setdefault("MEM0_TELEMETRY", "false")
 
 from autolinkingbrain.brain_link_store import merge_edges, save_cross_links  # noqa: E402
-from viewer_server import _fetch_all  # noqa: E402
+from autolinkingbrain.mem0_fetch import fetch_all_memories
 
 
 def _ollama_generate(host: str, model: str, prompt: str, timeout_s: float = 600.0) -> str:
@@ -186,7 +186,10 @@ def main() -> int:
         print("Нужен --dry-run или --apply", file=sys.stderr)
         return 2
 
-    payload = _fetch_all()
+    payload = fetch_all_memories(
+        log_source="script.suggest_cross_links",
+        include_cross_links=False,
+    )
     if payload.get("error"):
         print("Ошибка загрузки данных:", payload["error"], file=sys.stderr)
         return 1
