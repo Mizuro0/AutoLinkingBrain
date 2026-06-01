@@ -26,6 +26,9 @@ cross_link_topology_state.json
 # Per-repo CodeGraph indexes (generated)
 **/.codegraph/
 
+# Understand Anything analysis (local, regenerated)
+.understand-anything/
+
 # OS / IDE
 .DS_Store
 Thumbs.db
