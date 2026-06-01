@@ -8,7 +8,7 @@ Semantic memory MCP server for [Cursor](https://cursor.com): long-term agent mem
 
 | Layer | Role |
 |-------|------|
-| **MCP server** (`brain_server.py`) | Tools: `storeKnowledge`, `retrieveChain`, `checkProjectHealth`, cross-repo contracts |
+| **MCP server** (`brain_server.py` + `autolinkingbrain/mcp_tools/`) | Tools: `storeKnowledge`, `retrieveChain`, `checkProjectHealth`, cross-repo contracts |
 | **Cursor hooks** (`.cursor/hooks/`) | Inject context at session start; autolog agent replies and tool use into Mem0 |
 | **Brain Viewer** (`viewer_server.py` + `viewer_web/`) | Visual graph of memory channels + Ops metrics dashboard |
 | **CodeGraph** (optional, separate binary) | Code structure / symbols — use **before** Brain for navigation |
@@ -18,7 +18,7 @@ Cursor starts the MCP server automatically from `~/.cursor/mcp.json`. **`start.b
 ## Quick start
 
 ```bash
-git clone https://github.com/YOUR_ORG/autolinkingbrain.git
+git clone https://github.com/Mizuro0/AutoLinkingBrain.git
 cd autolinkingbrain
 python -m venv .venv
 # Windows: .venv\Scripts\activate
@@ -53,14 +53,16 @@ After install, reload Cursor (**Developer: Reload Window**). See [config/example
 ```
 autolinkingbrain/
 ├── brain.py                 # Unified launcher
-├── brain_server.py          # MCP entry point
+├── brain_server.py          # MCP bootstrap (~45 LOC; tools in mcp_tools/)
 ├── viewer_server.py         # HTTP API + static SPA
 ├── viewer.py                # Deprecated Streamlit viewer (see requirements-legacy.txt)
 ├── seed_memory.py           # Demo seed data
 ├── start.bat / start.sh
 ├── autolinkingbrain/        # Library package
-│   ├── mem0_*.py            # Settings, search, privacy, slug, lifecycle
-│   ├── brain_install.py     # MCP/hooks installer
+│   ├── mcp_context.py       # Shared MCP runtime (routing, search, health)
+│   ├── mcp_tools/           # MCP tool registration (9 tools)
+│   ├── mem0_*.py            # Settings, search, privacy, slug, lifecycle, fetch
+│   ├── brain_install.py     # MCP/hooks installer (merge_cursor_config)
 │   ├── brain_metrics.py     # Ops metrics
 │   ├── codegraph_init.py    # CodeGraph batch init
 │   └── ...
@@ -79,6 +81,9 @@ autolinkingbrain/
 | `MEM0_CHROMA_COLLECTION` | `graph_brain` | Collection name |
 | `OLLAMA_LLM` / `OLLAMA_EMBED` | `llama3.2` / `nomic-embed-text` | Mem0 models |
 | `VIEWER_PORT` | `8501` | Brain Viewer port |
+| `VIEWER_HOST` | `127.0.0.1` | Bind address (`0.0.0.0` + `VIEWER_AUTH_TOKEN` for remote) |
+| `VIEWER_AUTH_TOKEN` | (unset) | Optional Bearer token for all `/api/*` when set |
+| `MEM0_TELEMETRY` | `false` | Set by installer in MCP/hooks env |
 | `MCP_HYBRID_SEARCH` | `1` | BM25 + vector RRF in `retrieveChain` |
 | `MEM0_METRICS` | `1` | Write `.cursor/brain_events.jsonl` |
 
@@ -99,6 +104,7 @@ Agent protocol: [docs/AUTONOMOUS_KNOWLEDGE_GRAPH_PROTOCOL.md](docs/AUTONOMOUS_KN
 - **Memory tab** — force-directed graph by channel (`project_*`, `global_skills`, `global_topology`)
 - **Ops tab** — hook/MCP activity, ROI heuristics (`GET /api/metrics`)
 - API: `GET /api/memories`, `DELETE /api/memory/{id}`, `GET /api/health`
+- Remote access: set `VIEWER_AUTH_TOKEN` when binding `VIEWER_HOST=0.0.0.0` (see [viewer_web/README.md](viewer_web/README.md))
 
 Restart viewer after updates: `python brain.py start`
 

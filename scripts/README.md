@@ -2,7 +2,7 @@
 
 | Script | Purpose |
 |--------|---------|
-| `install.ps1` | Windows installer (venv, MCP, hooks) — prefer `python brain.py install` |
+| `install.ps1` | Windows installer (venv, MCP, hooks via `brain_install.merge_cursor_config`) — prefer `python brain.py install` |
 | `start_brain_viewer.ps1` | Start Brain Viewer via `brain.py start` |
 | `start_viewer.ps1` | Alias → `start_brain_viewer.ps1` (formerly Streamlit) |
 | `sync_cross_links_to_mem0.py` | Push `memory_cross_links.json` into Mem0 |

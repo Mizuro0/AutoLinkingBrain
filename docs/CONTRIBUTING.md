@@ -15,7 +15,7 @@ This project is small and operator-focused. **100% line documentation is not the
 
 | Area | Ideal coverage | Notes |
 |------|----------------|-------|
-| **`autolinkingbrain/*.py`** | **100%** module docstrings | Public library — every file explains its role |
+| **`autolinkingbrain/**/*.py`** | **100%** module docstrings | Public library — every file explains its role |
 | **Architecture layers** | **≥80%** with a README or `docs/` section | Root, package, hooks, viewer_web, scripts |
 | **Entry points** | README + ARCHITECTURE | `brain.py`, `brain_server.py`, `viewer_server.py` |
 | **Optional / legacy** | Marked deprecated | `viewer.py`, Streamlit, `requirements-legacy.txt` |
@@ -26,7 +26,7 @@ The `tests/test_doc_coverage.py` guard encodes the minimum bar (module docstring
 ## Adding features
 
 - Mem0 logic → `autolinkingbrain/`
-- MCP tools → `brain_server.py` (split into submodules when it grows)
+- MCP tools → `autolinkingbrain/mcp_tools/` (+ shared helpers in `mcp_context.py`)
 - Viewer API → `viewer_server.py`; UI → `viewer_web/`
 - Update tests when changing slug, privacy, link store, or fetch payload shape
 

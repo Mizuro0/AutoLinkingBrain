@@ -20,7 +20,8 @@ pip install -r requirements.txt
 python brain.py install --pull-models
 ```
 
-Или PowerShell-обёртка: `powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1`
+Или PowerShell-обёртка: `powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1`  
+(`install.ps1` делегирует merge MCP/hooks в `brain_install.merge_cursor_config` — тот же результат, что `python brain.py install`.)
 
 Шаблоны конфигов: [config/examples/](../config/examples/)
 
@@ -47,6 +48,9 @@ python brain.py install --pull-models
 | `MCP_HYBRID_SEARCH` | BM25+vector в retrieveChain | `1` |
 | `MEM0_STALE_DAYS` | Порог «устарело» в viewer | `90` |
 | `VIEWER_PORT` | Порт viewer | `8501` |
+| `VIEWER_HOST` | Bind viewer | `127.0.0.1` |
+| `VIEWER_AUTH_TOKEN` | Bearer для `/api/*` при remote bind | не задан |
+| `MEM0_TELEMETRY` | Телеметрия Mem0/Chroma | `false` (installer) |
 | `CODEGRAPH_WORKSPACE` | Корень monorepo для discovery | авто |
 | `CODEGRAPH_EXCLUDE_NAMES` | Имена папок — пропуск | не задано |
 | `CODEGRAPH_EXCLUDE_PATHS` | Сегменты пути — пропуск | не задано |
