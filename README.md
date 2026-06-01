@@ -113,6 +113,8 @@ MCP runs with `cwd: ${workspaceFolder}`, so the rule is copied into **each opene
 
 Disable sync: `MEM0_SKIP_CURSOR_AGENT_SYNC=1`. Details: [config/cursor/README.md](config/cursor/README.md).
 
+Refresh rules in all discovered git repos: `python brain.py sync-agent`.
+
 ## Brain Viewer
 
 - **Memory tab** — force-directed graph by channel (`project_*`, `global_skills`, `global_topology`)

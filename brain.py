@@ -180,6 +180,19 @@ def cmd_viewer_with_setup(args: argparse.Namespace) -> int:
     return cmd_viewer(open_browser=not args.no_browser)
 
 
+def cmd_sync_agent(args: argparse.Namespace) -> int:
+    sys.path.insert(0, str(ROOT))
+    from autolinkingbrain.cursor_agent import sync_cursor_agent_assets
+
+    written = sync_cursor_agent_assets(ROOT, force=args.force_copy, all_discovered_repos=True)
+    if written:
+        for p in written:
+            print(p)
+    else:
+        print("OK (already up to date)")
+    return 0
+
+
 def cmd_stats(args: argparse.Namespace) -> int:
     sys.path.insert(0, str(ROOT))
     import json as _json
@@ -203,8 +216,8 @@ def main() -> int:
         "command",
         nargs="?",
         default="start",
-        choices=("start", "status", "codegraph", "install", "setup", "stats"),
-        help="start=setup+viewer, setup=bootstrap, stats=metrics, status=health, codegraph=index",
+        choices=("start", "status", "codegraph", "install", "setup", "stats", "sync-agent"),
+        help="start=setup+viewer, setup=bootstrap, sync-agent=skill+rules to all repos, stats=metrics",
     )
 
     p_stats = parser.add_argument_group("stats options (with command stats)")
@@ -224,6 +237,9 @@ def main() -> int:
     p_inst.add_argument("--skip-ollama", action="store_true", help="Skip Ollama check")
     p_inst.add_argument("--pull-models", action="store_true", help="ollama pull llama3.2 + nomic-embed-text")
     p_inst.add_argument("--with-codegraph", action="store_true", help="Add codegraph MCP entry if on PATH")
+
+    p_sync = parser.add_argument_group("sync-agent options (with command sync-agent)")
+    p_sync.add_argument("--force-copy", action="store_true", help="Overwrite skill/rules even when up to date")
 
     p_cg = parser.add_argument_group("codegraph options (with command codegraph)")
     p_cg.add_argument("--list", action="store_true", help="List discovered repos only")
@@ -249,6 +265,8 @@ def main() -> int:
         return cmd_install(args)
     if args.command == "setup":
         return cmd_setup(args)
+    if args.command == "sync-agent":
+        return cmd_sync_agent(args)
     if args.command == "stats":
         return cmd_stats(args)
     return 1

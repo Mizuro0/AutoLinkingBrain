@@ -13,11 +13,16 @@ Canonical templates installed by AutoLinkingBrain:
 
 | Event | Skill (global) | Project rules |
 |-------|----------------|---------------|
-| `python brain.py install` | yes | yes → AutoLinkingBrain repo root |
-| MCP server start (`brain_server.py`) | yes | yes → MCP `cwd` (= `${workspaceFolder}`) |
-| `python brain.py setup` | yes | yes → repo root |
+| `python brain.py install` | yes | yes → all auto-discovered repos + repo root |
+| `python brain.py sync-agent` | yes | yes → all auto-discovered git repos (manual refresh) |
+| `python brain.py setup` | yes | yes → all auto-discovered repos |
+| MCP first tool call (MCP roots) | — | yes → each MCP workspace root |
+| Hook `sessionStart` | — | yes → `workspace_roots` + `cwd` from hook payload |
+| MCP server start (`brain_server.py`) | yes | yes → MCP `cwd` only (one process, first workspace) |
 
-So every project where Cursor starts AutoLinkingBrain MCP gets the rule file automatically on first MCP connection.
+**Why other projects were empty:** Cursor keeps one MCP process alive; `cwd` is set only at first start. Rules now also sync via **sessionStart hook** and **install/setup discovery** (`collect_repo_paths` — same as CodeGraph).
+
+**Important:** Project rules appear in Settings only after `.cursor/rules/*.mdc` exists in that folder. Opening Agent chat in a project triggers `sessionStart`; or run `python brain.py sync-agent` once.
 
 Implementation: `autolinkingbrain/cursor_agent.py`. Disable: `MEM0_SKIP_CURSOR_AGENT_SYNC=1`.
 

@@ -58,6 +58,15 @@ class McpContext:
                     paths.append(str(p))
             if paths:
                 self.mcp_roots_paths_cache = paths
+                try:
+                    from autolinkingbrain.cursor_agent import sync_project_rules_for_workspace_roots
+
+                    sync_project_rules_for_workspace_roots(paths)
+                except Exception:
+                    logging.getLogger(__name__).debug(
+                        "cursor project rules sync from MCP roots failed",
+                        exc_info=True,
+                    )
         except Exception:
             logging.getLogger(__name__).debug(
                 "MCP roots/list unavailable; Mem0 project slug falls back to cwd / overrides.",

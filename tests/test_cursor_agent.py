@@ -35,6 +35,50 @@ def test_sync_cursor_agent_assets(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     assert cursor_agent.agent_assets_configured(ws)
 
 
+def test_sync_project_rules_for_workspace_roots(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from autolinkingbrain import cursor_agent
+
+    cursor_agent.RULES_SRC_DIR = tmp_path / "config" / "cursor" / "rules"
+    rule_src = cursor_agent.RULES_SRC_DIR / "autolinking-brain.mdc"
+    rule_src.parent.mkdir(parents=True)
+    rule_src.write_text("---\nalwaysApply: false\n---\n# rule\n", encoding="utf-8")
+    monkeypatch.delenv("MEM0_SKIP_CURSOR_AGENT_SYNC", raising=False)
+
+    ws_a = tmp_path / "backend"
+    ws_b = tmp_path / "crm"
+    ws_a.mkdir()
+    ws_b.mkdir()
+    written = cursor_agent.sync_project_rules_for_workspace_roots(
+        [str(ws_a), str(ws_b)],
+        cwd=str(ws_a),
+        force=True,
+    )
+    assert len(written) == 2
+    assert (ws_a / ".cursor" / "rules" / "autolinking-brain.mdc").is_file()
+    assert (ws_b / ".cursor" / "rules" / "autolinking-brain.mdc").is_file()
+
+
+def test_eligible_rule_sync_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from autolinkingbrain import cursor_agent
+
+    monkeypatch.setattr(cursor_agent, "REPO_ROOT", tmp_path)
+    server = tmp_path / "mcp_server"
+    server.mkdir()
+    (server / ".git").mkdir()
+    (server / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+    nested = server / "scripts"
+    nested.mkdir()
+    (nested / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+
+    other = tmp_path / "backend"
+    other.mkdir()
+    (other / ".git").mkdir()
+
+    assert cursor_agent._eligible_rule_sync_root(server)
+    assert cursor_agent._eligible_rule_sync_root(other)
+    assert not cursor_agent._eligible_rule_sync_root(nested)
+
+
 def test_sync_skipped_by_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from autolinkingbrain.cursor_agent import sync_cursor_agent_assets
 

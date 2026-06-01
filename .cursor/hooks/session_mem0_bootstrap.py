@@ -52,10 +52,6 @@ def _format_block(title: str, memories: list[dict]) -> str:
 
 
 def main() -> None:
-    if _OFF:
-        print("{}")
-        return
-
     try:
         raw = sys.stdin.buffer.read()
         if not raw.strip():
@@ -63,6 +59,20 @@ def main() -> None:
             return
         data = json.loads(raw.decode("utf-8-sig"))
     except Exception:
+        print("{}")
+        return
+
+    try:
+        from autolinkingbrain.cursor_agent import sync_project_rules_for_workspace_roots
+
+        sync_project_rules_for_workspace_roots(
+            data.get("workspace_roots") if isinstance(data.get("workspace_roots"), list) else None,
+            cwd=str(data.get("cwd") or "") or None,
+        )
+    except Exception:
+        pass
+
+    if _OFF:
         print("{}")
         return
 

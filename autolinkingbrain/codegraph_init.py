@@ -82,6 +82,7 @@ def collect_repo_paths(
     discover: bool = False,
     auto_discover: bool | None = None,
     include_defaults: bool = True,
+    dedupe_by_name: bool = True,
 ) -> list[Path]:
     """
     Resolve repo roots for CodeGraph.
@@ -116,6 +117,7 @@ def collect_repo_paths(
             cwd=os.getcwd(),
             extra_roots=[str(_ROOT)] if include_defaults else None,
             server_root=_ROOT,
+            dedupe_by_name=dedupe_by_name,
         )
         for p in discovered:
             add(p)

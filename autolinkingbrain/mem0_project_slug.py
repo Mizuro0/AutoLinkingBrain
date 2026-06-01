@@ -413,6 +413,7 @@ def discover_repo_paths_for_workspace(
     server_root: str | pathlib.Path | None = None,
     scan_siblings: bool | None = None,
     scan_depth: int | None = None,
+    dedupe_by_name: bool = True,
 ) -> list[pathlib.Path]:
     """
     Filesystem paths of repos under workspace(s) — same rules as discover_project_slugs_for_workspace.
@@ -482,7 +483,9 @@ def discover_repo_paths_for_workspace(
                 elif slug_from_git_marker(sib) or looks_like_project_dir(sib):
                     register(sib)
 
-    return _dedupe_repo_paths_by_name(list(found.values()))
+    return _dedupe_repo_paths_by_name(list(found.values())) if dedupe_by_name else sorted(
+        found.values(), key=lambda p: str(p).lower()
+    )
 
 
 def extract_context_paths_from_text(text: str, limit: int = 8) -> list[str]:
