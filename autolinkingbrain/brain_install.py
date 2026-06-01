@@ -11,6 +11,7 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
+from autolinkingbrain.cursor_agent import sync_cursor_agent_assets
 from autolinkingbrain.paths import REPO_ROOT as ROOT
 
 
@@ -226,15 +227,18 @@ def merge_cursor_config(
     *,
     skip_mcp: bool = False,
     skip_hooks: bool = False,
+    skip_agent_assets: bool = False,
     with_codegraph: bool = False,
 ) -> list[Path]:
-    """Merge AutoLinkingBrain into ~/.cursor/mcp.json and hooks.json (single source for PS + Python)."""
+    """Merge AutoLinkingBrain into ~/.cursor/mcp.json, hooks.json, skill, and rules."""
     interpreter = py or _venv_python()
     written: list[Path] = []
     if not skip_mcp:
         written.append(_merge_mcp(interpreter, with_codegraph=with_codegraph))
     if not skip_hooks:
         written.append(_merge_hooks(interpreter))
+    if not skip_agent_assets:
+        written.extend(sync_cursor_agent_assets())
     return written
 
 
@@ -279,6 +283,19 @@ def run_install(
         p = _merge_hooks(py)
         print(f"  -> {p}")
 
+    print("==> Cursor agent skill + rules")
+    synced = sync_cursor_agent_assets()
+    if synced:
+        for p in synced:
+            print(f"  -> {p}")
+    else:
+        from autolinkingbrain.cursor_agent import agent_assets_configured
+
+        if agent_assets_configured():
+            print("  OK (already up to date)")
+        else:
+            print("  ! sync skipped or failed — check MEM0_SKIP_CURSOR_AGENT_SYNC")
+
     print("\nDone. Reload Cursor. Viewer: python brain.py")
     if with_codegraph or shutil.which("codegraph"):
         print("CodeGraph: python brain.py codegraph")
@@ -317,6 +334,15 @@ def run_setup(
         print(f"  -> {p}")
     else:
         print("==> hooks.json OK")
+
+    print("==> Cursor agent skill + rules")
+    synced = sync_cursor_agent_assets()
+    for p in synced:
+        print(f"  -> {p}")
+    if not synced:
+        from autolinkingbrain.cursor_agent import agent_assets_configured
+
+        print("  OK (up to date)" if agent_assets_configured() else "  ! not installed")
 
     print("==> Ollama")
     if _ollama_ok():

@@ -99,6 +99,17 @@ Full list: [docs/README.ru.md](docs/README.ru.md#переменные-окруж
 
 Agent protocol: [docs/AUTONOMOUS_KNOWLEDGE_GRAPH_PROTOCOL.md](docs/AUTONOMOUS_KNOWLEDGE_GRAPH_PROTOCOL.md)
 
+### Cursor skill & global rules
+
+`python brain.py install` (and each MCP server start) syncs agent assets from `config/cursor/`:
+
+| Template | Global target |
+|----------|---------------|
+| `config/cursor/skills/autolinking-brain-mcp/SKILL.md` | `~/.cursor/skills/autolinking-brain-mcp/` |
+| `config/cursor/rules/autolinking-brain.mdc` | `~/.cursor/rules/` |
+
+Disable sync: `MEM0_SKIP_CURSOR_AGENT_SYNC=1`. Details: [config/cursor/README.md](config/cursor/README.md).
+
 ## Brain Viewer
 
 - **Memory tab** — force-directed graph by channel (`project_*`, `global_skills`, `global_topology`)

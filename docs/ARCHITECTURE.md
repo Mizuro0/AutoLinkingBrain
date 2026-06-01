@@ -68,7 +68,7 @@ flowchart TB
 | **MCP** (`brain_server.py` → `mcp_tools/`) | Cursor через `~/.cursor/mcp.json` | 9 инструментов памяти для агента |
 | **Hooks** (`.cursor/hooks/*.py`) | Cursor через `~/.cursor/hooks.json` | Контекст сессии + автолог без MCP |
 | **Viewer** (`brain.py start`) | Пользователь / `start.bat` | Brain Viewer: `viewer_server` + `viewer_web` (граф + Ops) |
-| **Installer** (`brain.py install`, `scripts/install.ps1`) | Пользователь | venv, `.env`, merge MCP/hooks через `brain_install.merge_cursor_config` |
+| **Installer** (`brain.py install`, `scripts/install.ps1`) | Пользователь | venv, `.env`, merge MCP/hooks + skill/rules через `brain_install.merge_cursor_config` |
 | **Legacy UI** (`viewer.py`) | Вручную, Streamlit | **Deprecated** — см. `requirements-legacy.txt` |
 | **CodeGraph** | Отдельный MCP + CLI | Структура кода, не память |
 | **CI** (`.github/workflows/ci.yml`) | GitHub Actions on push/PR | `pytest tests/` на Ubuntu, без Ollama/Chroma runtime |
@@ -181,6 +181,17 @@ Slug резолвится в `autolinkingbrain/mem0_project_slug.py` (monorepo, 
 
 Hooks и MCP используют одни и те же `mem0_*` модули и Chroma, но hooks **не** вызывают `brain_server.py`.
 
+## Cursor Agent: skill + global rules
+
+Шаблоны в `config/cursor/` → глобально при install и старте MCP:
+
+| Файл | Назначение |
+|------|------------|
+| `skills/autolinking-brain-mcp/SKILL.md` | Agent Skill (graph-first, reindex, dual MCP) |
+| `rules/autolinking-brain.mdc` | Global rule (`~/.cursor/rules/`, Apply Intelligently) |
+
+Синхронизация: `autolinkingbrain/cursor_agent.py`. Отключить: `MEM0_SKIP_CURSOR_AGENT_SYNC=1`.
+
 ## Документация по слоям
 
 | Слой | Файл |
@@ -190,6 +201,7 @@ Hooks и MCP используют одни и те же `mem0_*` модули и
 | Hooks | [.cursor/hooks/README.md](../.cursor/hooks/README.md) |
 | Viewer UI | [viewer_web/README.md](../viewer_web/README.md) |
 | Scripts | [scripts/README.md](../scripts/README.md) |
+| Cursor agent assets | [config/cursor/README.md](../config/cursor/README.md) |
 | Contributing | [docs/CONTRIBUTING.md](CONTRIBUTING.md) |
 
 ## Файлы состояния (local, в .gitignore)

@@ -1,0 +1,40 @@
+---
+description: >-
+  AutoLinkingBrain Mem0 MCP — graph-first repo analysis, reindex protocol,
+  cross-repo contracts. Apply when AutoLinkingBrain MCP is configured or the
+  user asks about project overview, architecture, stack, indexing, Mem0 memory,
+  checkProjectHealth, retrieveChain, storeKnowledge, or markIndexingComplete.
+alwaysApply: false
+---
+
+# AutoLinkingBrain agent protocol (global)
+
+Synced to `~/.cursor/rules/` by `python brain.py install` and when the MCP server starts.
+
+## Graph before files
+
+For repo/project overview, stack, architecture, onboarding:
+
+1. Call MCP **`checkProjectHealth`** with `{}` and server **`user-AutoLinkingBrain`** (or project-scoped id from MCP logs) **before** `read_file`, `grep`, `glob`, or codebase search.
+2. Summarize `STATUS`, `REINDEX_PROTOCOL`, **INCOMING DEPENDENCIES** for the user.
+3. Then **`sessionContextPack`** / **`retrieveChain`**, then local files.
+
+`sessionStart` hook context is supplementary — it does **not** replace `checkProjectHealth`.
+
+## Reindex
+
+When `REINDEX_PROTOCOL: required`: scan modules + outbound APIs → **`registerDependency`** → **`storeKnowledge`** → **`markIndexingComplete`**.
+
+Only the **`markIndexingComplete`** MCP tool counts as indexed. Autolog or chat text mentioning `FINAL_INDEXING_MARK` does **not**.
+
+## Writes & routing
+
+- Mem0 bodies and dependency reasons: **English** only.
+- Monorepo: pass **`context_path`** with the subproject path so memories land in `project_<slug>` for that repo.
+
+## Dual MCP
+
+- **CodeGraph** first for symbols, callers, trace, impact (when `.codegraph/` exists).
+- **AutoLinkingBrain** for memory, indexing state, cross-repo contracts.
+
+See skill **`autolinking-brain-mcp`** and `docs/AUTONOMOUS_KNOWLEDGE_GRAPH_PROTOCOL.md`.

@@ -12,6 +12,7 @@
 #   -WithCodeGraphMcp   добавить codegraph в mcp.json (если codegraph в PATH)
 #
 # MCP/hooks merge uses autolinkingbrain.brain_install (same as python brain.py install).
+# Also syncs Cursor agent skill + global rules to ~/.cursor/skills and ~/.cursor/rules.
 # Prefer: python brain.py install  — cross-platform, single source of truth.
 #
 #Requires -Version 5.1

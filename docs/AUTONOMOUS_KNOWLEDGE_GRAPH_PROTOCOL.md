@@ -69,6 +69,8 @@ If **`checkProjectHealth`** fails or MCP is unavailable: state that clearly in *
   4. Scan main entrypoints, configs, and integration surfaces relevant to this stack.
   5. Call **`storeKnowledge`** with a **project** summary (`scope="project"` or `both` as appropriate), with correct `tech` / `scenario` labels — **body in English**.
   6. Finish with **`markIndexingComplete(summary="…")`** (**English** summary) so **`checkProjectHealth`** can see **`FINAL_INDEXING_MARK`**.
+
+**Important:** only the **`markIndexingComplete`** MCP tool counts. Hook autolog or other memories that mention `FINAL_INDEXING_MARK` do **not** satisfy health checks.
 - Optionally, after a successful mark, call **`checkProjectHealth()`** once more if the user wants confirmation that reindex is no longer required.
 
 ## 2. Dependency contract

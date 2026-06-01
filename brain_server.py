@@ -18,6 +18,10 @@ install_mcp_full_capture(_REPO_ROOT)
 warnings.filterwarnings("ignore")
 os.environ.setdefault("MEM0_TELEMETRY", "false")
 
+from autolinkingbrain.cursor_agent import sync_cursor_agent_assets
+
+sync_cursor_agent_assets()
+
 try:
     from mcp.server.fastmcp import FastMCP
     from mem0 import Memory
