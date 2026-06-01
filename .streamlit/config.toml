@@ -1,0 +1,5 @@
+# Локальный viewer: без авто-открытия браузера при автозапуске; слушаем только localhost.
+[server]
+headless = true
+address = "127.0.0.1"
+port = 8501

@@ -1,0 +1,37 @@
+.venv/
+chroma_data/
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+.python-version
+
+# Runtime / local state (never commit)
+.cursor/mem0_autolog_last.txt
+.cursor/mem0_autolog_hook.log
+.cursor/mem0_autolog_debug.on
+.cursor/mem0_autolog_stdin.txt
+.cursor/mem0_autolog_dedupe_*.json
+.cursor/mem0_toollog_*
+.cursor/mem0_kb_activity.log
+.cursor/mcp_full.log
+.cursor/brain_events.jsonl
+.cursor/migration_*.jsonl
+.cursor/mcp.json
+critical_error.log
+codegraph_init.log
+memory_cross_links.json
+cross_link_topology_state.json
+
+# Per-repo CodeGraph indexes (generated)
+**/.codegraph/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Streamlit
+.streamlit/secrets.toml

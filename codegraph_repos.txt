@@ -1,0 +1,7 @@
+# Optional manual extras only — auto-discovery is ON by default (same rules as Mem0 slug).
+# brain.py codegraph init finds git repos automatically:
+#   - sibling folders next to mcp_server (e.g. D:\codes\* when mcp_server is in D:\codes)
+#   - child repos under CODEGRAPH_WORKSPACE or cwd (monorepo feature/backend, …)
+#
+# Uncomment only if a repo is NOT found automatically:
+# D:\some\orphan_repo

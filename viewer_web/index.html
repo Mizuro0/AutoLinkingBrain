@@ -1,0 +1,1457 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>🧠 Brain — Mem0 Viewer</title>
+<style>
+  :root {
+    --bg: #0e0d0c;
+    --bg2: #161412;
+    --fg: #eadfc8;
+    --dim: #8a8275;
+    --line: #2c2925;
+    --panel: rgba(20, 18, 15, 0.82);
+    --accent: #9a8f6c;
+    --danger: #a86c6c;
+    --global: #4a585c;
+    --topology: #59544d;
+    --project: #4f524a;
+    --other: #534f4a;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: radial-gradient(ellipse at center, #141210 0%, var(--bg) 80%);
+    color: var(--fg);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden;
+  }
+  #brain {
+    position: fixed; inset: 0; cursor: grab;
+  }
+  #brain.grabbing { cursor: grabbing; }
+
+  .panel {
+    position: fixed;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.55);
+  }
+
+  /* Поиск */
+  #search {
+    top: 16px; left: 16px;
+    width: 380px;
+    padding: 10px 12px;
+    z-index: 10;
+  }
+  #search .row { display: flex; align-items: center; gap: 8px; }
+  #search svg { width: 16px; height: 16px; color: var(--dim); flex-shrink: 0; }
+  #search input {
+    flex: 1;
+    background: transparent;
+    color: var(--fg);
+    border: 0; outline: 0;
+    font-size: 14px;
+  }
+  #search input::placeholder { color: var(--dim); }
+  #search .filters {
+    margin-top: 8px;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  #search select {
+    flex: 1;
+    background: #161412;
+    color: var(--fg);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 6px 8px;
+    font-size: 12px;
+    outline: none;
+  }
+  #search.filter-active {
+    border-color: rgba(201, 178, 122, 0.45);
+    box-shadow: 0 0 0 1px rgba(201, 178, 122, 0.12);
+  }
+  #clear-filter {
+    background: #231f1a;
+    color: var(--dim);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  #clear-filter:hover { color: var(--fg); background: #2b2620; }
+  #search .group-title {
+    margin-top: 10px;
+    padding: 4px 8px 2px;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--dim);
+  }
+  #search .hits {
+    margin-top: 10px;
+    max-height: 55vh;
+    overflow-y: auto;
+    display: none;
+  }
+  #search.open .hits { display: block; }
+  #search .hit {
+    padding: 8px 8px;
+    border-radius: 9px;
+    cursor: pointer;
+    font-size: 12.5px;
+    line-height: 1.4;
+    color: var(--fg);
+  }
+  #search .hit:hover, #search .hit.active {
+    background: rgba(201, 178, 122, 0.10);
+  }
+  #search .hit .badge {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 8px;
+    font-size: 10px;
+    margin-right: 6px;
+    vertical-align: middle;
+    text-transform: lowercase;
+    letter-spacing: 0.02em;
+  }
+  #search .hit .slug { color: var(--dim); font-size: 10.5px; margin-left: 4px; }
+  #search .empty { color: var(--dim); padding: 8px; font-size: 12px; }
+  .badge.global { background: rgba(74, 88, 92, 0.14); color: #9aa8ac; }
+  .badge.topology { background: rgba(89, 84, 77, 0.14); color: #aea59a; }
+  .badge.project { background: rgba(79, 82, 74, 0.14); color: #a8ac9f; }
+  .badge.other { background: rgba(83, 79, 74, 0.14); color: #a39c96; }
+  .badge.stale { background: rgba(168, 108, 108, 0.18); color: #c99; margin-left: 4px; }
+  #search .stale-toggle {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 11px; color: var(--dim); white-space: nowrap;
+    cursor: pointer; user-select: none;
+  }
+  #search .stale-toggle input { accent-color: var(--accent); }
+
+  /* Межканальные связи в легенде */
+  #legend .cross-legend {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--line);
+    font-size: 11px;
+    color: var(--dim);
+  }
+  #legend .cross-line {
+    display: inline-block;
+    width: 22px;
+    height: 0;
+    border-top: 1px dashed rgba(130, 128, 150, 0.55);
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+
+  /* Легенда */
+  #legend {
+    top: 16px; right: 16px;
+    padding: 10px 14px;
+    font-size: 12px;
+    z-index: 9;
+  }
+  #legend .row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+  #legend .row.channel-row:hover { color: var(--fg); background: rgba(255,255,255,0.04); border-radius: 6px; margin-left: -4px; padding-left: 4px; }
+  #legend .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    box-shadow: 0 0 6px rgba(0, 0, 0, 0.35);
+  }
+  #legend .title { color: var(--dim); font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 6px; }
+
+  /* Панель детали */
+  #detail {
+    top: 16px; right: 16px;
+    width: 400px;
+    max-height: calc(100vh - 32px);
+    padding: 18px;
+    overflow: auto;
+    z-index: 11;
+    display: none;
+  }
+  #detail.open { display: block; }
+  #detail h3 { margin: 0 0 6px; font-size: 14px; }
+  #detail .meta { font-size: 11px; color: var(--dim); margin-bottom: 12px; word-break: break-all; }
+  #detail .meta code { color: var(--fg); }
+  #detail .body {
+    font-size: 13px; line-height: 1.55;
+    white-space: pre-wrap; word-wrap: break-word;
+    border-left: 2px solid var(--accent);
+    padding-left: 10px;
+    opacity: .95;
+  }
+  #detail .actions {
+    margin-top: 16px;
+    display: flex; gap: 8px; flex-wrap: wrap;
+  }
+  #detail button {
+    background: #231f1a; color: var(--fg);
+    border: 1px solid #3a362f;
+    padding: 8px 12px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: background .15s;
+  }
+  #detail button:hover { background: #2b2620; }
+  #detail button.danger { border-color: #5a3333; color: var(--danger); }
+  #detail button.danger:hover { background: #3a2323; }
+  #detail .close {
+    position: absolute; top: 10px; right: 12px;
+    background: transparent; border: 0; color: var(--dim);
+    font-size: 18px; cursor: pointer; padding: 2px 6px;
+  }
+
+  /* Тултип */
+  #tooltip {
+    position: fixed;
+    pointer-events: none;
+    padding: 8px 10px;
+    border-radius: 9px;
+    background: rgba(18, 16, 13, 0.95);
+    border: 1px solid var(--line);
+    font-size: 11.8px;
+    line-height: 1.4;
+    max-width: 260px;
+    display: none;
+    z-index: 30;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  }
+  #tooltip .t-slug { color: var(--dim); font-size: 10.5px; margin-bottom: 4px; }
+
+  /* Нижняя строка */
+  #status {
+    position: fixed;
+    left: 16px; bottom: 12px;
+    font-size: 11px;
+    color: var(--dim);
+    z-index: 5;
+  }
+  #status .dot { display: inline-block; width: 6px; height: 6px; background: var(--accent); border-radius: 50%; margin-right: 6px; box-shadow: 0 0 8px var(--accent); }
+
+  /* Реалистичные хинты сверху */
+  #hint {
+    position: fixed;
+    bottom: 12px; right: 16px;
+    font-size: 10.5px;
+    color: var(--dim);
+    text-align: right;
+    line-height: 1.55;
+    z-index: 5;
+  }
+  kbd {
+    background: #1d1a16; border: 1px solid var(--line);
+    border-radius: 4px; padding: 1px 5px;
+    font-family: ui-monospace, monospace; font-size: 10.5px;
+  }
+
+  #view-tabs {
+    position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 4px; z-index: 20;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 4px;
+    backdrop-filter: blur(10px);
+  }
+  #view-tabs a {
+    color: var(--dim); text-decoration: none; font-size: 12px;
+    padding: 7px 16px; border-radius: 9px; transition: .15s;
+  }
+  #view-tabs a:hover { color: var(--fg); background: rgba(255,255,255,0.04); }
+  #view-tabs a.active { color: var(--fg); background: rgba(201,178,122,0.12); }
+</style>
+</head>
+<body>
+<nav id="view-tabs">
+  <a href="/" class="active">Память</a>
+  <a href="/ops.html">Ops</a>
+</nav>
+
+<canvas id="brain"></canvas>
+
+<div class="panel" id="search">
+  <div class="row">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="11" cy="11" r="7"/>
+      <path d="m20 20-3.5-3.5"/>
+    </svg>
+    <input id="q" placeholder="Поиск по памяти (Ctrl+F)…" autocomplete="off" />
+  </div>
+  <div class="filters">
+    <select id="channel-filter" title="Фильтр по каналу">
+      <option value="">все каналы</option>
+    </select>
+    <button type="button" id="clear-filter" title="Сбросить фильтр канала">сброс</button>
+    <label class="stale-toggle" title="Показать только записи старше порога (MEM0_STALE_DAYS)">
+      <input type="checkbox" id="stale-only" /> устаревшие
+    </label>
+  </div>
+  <div class="hits" id="hits"></div>
+</div>
+
+<div class="panel" id="legend">
+  <div class="title">каналы памяти</div>
+  <div class="row"><span class="dot" style="background:var(--global);color:var(--global)"></span>global_skills — глобальный опыт</div>
+  <div class="row"><span class="dot" style="background:var(--topology);color:var(--topology)"></span>global_topology — граф зависимостей</div>
+  <div id="legend-channels"></div>
+  <div class="cross-legend"><span class="cross-line"></span>пунктир — межканальная польза · <span style="opacity:.75">кольцо — устаревшая запись</span></div>
+</div>
+
+<div class="panel" id="detail"></div>
+<div id="tooltip"></div>
+<div id="status"><span class="dot"></span><span id="status-text">инициализация…</span></div>
+<div id="hint">
+  <kbd>drag</kbd> панорама · <kbd>scroll</kbd> зум · <kbd>Ops</kbd> метрики · <kbd>Ctrl+F</kbd> поиск · <kbd>Esc</kbd> сброс
+</div>
+
+<script>
+(async function () {
+  "use strict";
+
+  // ---------- DOM ----------
+  const canvas = document.getElementById("brain");
+  const ctx = canvas.getContext("2d");
+  const tooltip = document.getElementById("tooltip");
+  const statusText = document.getElementById("status-text");
+  const detail = document.getElementById("detail");
+  const searchPanel = document.getElementById("search");
+  const q = document.getElementById("q");
+  const channelFilter = document.getElementById("channel-filter");
+  const clearFilterBtn = document.getElementById("clear-filter");
+  const staleOnly = document.getElementById("stale-only");
+  const legendChannels = document.getElementById("legend-channels");
+  const hits = document.getElementById("hits");
+
+  let W = window.innerWidth, H = window.innerHeight;
+  function resize() {
+    W = window.innerWidth; H = window.innerHeight;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    canvas.style.width = W + "px"; canvas.style.height = H + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener("resize", resize); resize();
+
+  // ---------- state ----------
+  const state = {
+    nodes: [],
+    links: [],
+    clusters: new Map(),
+    byId: new Map(),
+    crossLinkGroups: 0,
+    hoverId: null,
+    selectedId: null,
+    highlighted: new Set(),
+    focusedId: null,
+    focusAnim: 0,
+    pendingFocus: null,
+    cam: { x: 0, y: 0, z: 1, tz: 1 },
+    drag: null,
+    paused: false,
+  };
+
+  // ---------- helpers ----------
+  function classify(uid) {
+    if (uid === "global_skills") return "global";
+    if (uid === "global_topology") return "topology";
+    if (uid.startsWith("project_")) return "project";
+    return "other";
+  }
+  function prettyUid(uid) {
+    if (uid === "global_skills") return "global_skills";
+    if (uid === "global_topology") return "global_topology";
+    if (uid.startsWith("project_")) return uid.slice("project_".length);
+    return uid;
+  }
+  function scopeLabel(s) {
+    return ({ global: "Глобальный опыт", topology: "Топология зависимостей", project: "Проект", other: "Прочее" })[s] || s;
+  }
+  function hashCode(s) {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+    return h;
+  }
+  const BASE_COLOR = { global: "#4a585c", topology: "#59544d", project: "#4f524a", other: "#534f4a" };
+  function colorForUser(uid, scope) {
+    if (scope === "project") {
+      const h = ((hashCode(uid) % 360) + 360) % 360;
+      return `hsl(${h}, 11%, 51%)`;
+    }
+    return BASE_COLOR[scope] || BASE_COLOR.other;
+  }
+  function parseColor(c) {
+    // returns {r,g,b} from hex or hsl
+    if (c.startsWith("#")) {
+      let h = c.slice(1);
+      if (h.length === 3) h = h.split("").map(ch => ch + ch).join("");
+      return {
+        r: parseInt(h.slice(0, 2), 16),
+        g: parseInt(h.slice(2, 4), 16),
+        b: parseInt(h.slice(4, 6), 16),
+      };
+    }
+    if (c.startsWith("hsl")) {
+      const m = c.match(/hsl\(([\d.]+),\s*([\d.]+)%,\s*([\d.]+)%\)/);
+      if (!m) return { r: 180, g: 180, b: 180 };
+      return hslToRgb(+m[1], +m[2] / 100, +m[3] / 100);
+    }
+    return { r: 180, g: 180, b: 180 };
+  }
+  function hslToRgb(h, s, l) {
+    h = (h % 360 + 360) % 360 / 360;
+    const c = (1 - Math.abs(2 * l - 1)) * s;
+    const x = c * (1 - Math.abs(((h * 6) % 2) - 1));
+    const m = l - c / 2;
+    let r = 0, g = 0, b = 0;
+    if (h < 1/6) { r = c; g = x; }
+    else if (h < 2/6) { r = x; g = c; }
+    else if (h < 3/6) { g = c; b = x; }
+    else if (h < 4/6) { g = x; b = c; }
+    else if (h < 5/6) { r = x; b = c; }
+    else { r = c; b = x; }
+    return { r: Math.round((r + m) * 255), g: Math.round((g + m) * 255), b: Math.round((b + m) * 255) };
+  }
+  function rgba(rgb, a) { return `rgba(${rgb.r},${rgb.g},${rgb.b},${a})`; }
+  function escapeHtml(s) {
+    return (s || "").replace(/[&<>"']/g, c =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
+    );
+  }
+
+  // ---------- data ----------
+  statusText.textContent = "загрузка данных…";
+  let payload;
+  try {
+    const res = await fetch("/api/memories");
+    payload = await res.json();
+  } catch (e) {
+    statusText.textContent = "не удалось загрузить: " + e.message;
+    return;
+  }
+  if (payload.error) {
+    statusText.textContent = payload.error;
+  }
+
+  const STALE_DAYS = payload && payload.stale_days ? payload.stale_days : 90;
+
+  function parseTs(raw) {
+    const s = (raw || "").trim();
+    if (!s) return 0;
+    const t = Date.parse(s.replace("Z", "+00:00"));
+    return Number.isFinite(t) ? t : 0;
+  }
+  function memoryTs(item) {
+    const meta = item.metadata || {};
+    return parseTs(item.updated_at || item.created_at || meta.updated_at || meta.created_at);
+  }
+  function isStaleItem(item) {
+    if (item.stale === true) return true;
+    const ts = memoryTs(item);
+    if (!ts) return false;
+    const ageDays = (Date.now() - ts) / 86400000;
+    return ageDays >= STALE_DAYS;
+  }
+  function formatTs(raw) {
+    const ts = parseTs(raw);
+    if (!ts) return "";
+    try { return new Date(ts).toLocaleString(); } catch { return raw || ""; }
+  }
+
+  const byUser = new Map();
+  for (const n of (payload.nodes || [])) {
+    const arr = byUser.get(n.user_id) || [];
+    arr.push(n);
+    byUser.set(n.user_id, arr);
+  }
+
+  // Сортировка каналов: сначала global, потом topology, потом проекты по алфавиту
+  const userIds = [...byUser.keys()].sort((a, b) => {
+    const order = { global: 0, topology: 1, project: 2, other: 3 };
+    return (order[classify(a)] - order[classify(b)]) || a.localeCompare(b);
+  });
+
+  // Упорядоченная раскладка: global в центре, project_* — алфавитная сетка
+  const CX = W / 2, CY = H / 2;
+  const clusters = state.clusters;
+  const projectChannels = userIds.filter(uid => classify(uid) === "project");
+  const otherChannels = userIds.filter(uid => classify(uid) === "other");
+  const projCols = Math.max(1, Math.ceil(Math.sqrt(projectChannels.length)));
+  const projRows = Math.ceil(projectChannels.length / projCols);
+  const cellW = Math.min(300, Math.max(200, (W - 160) / projCols));
+  const cellH = Math.min(240, Math.max(170, (H - 220) / Math.max(1, projRows)));
+  const gridW = projCols * cellW;
+  const gridH = projRows * cellH;
+  const gridOriginX = CX - gridW / 2;
+  const gridOriginY = CY + 90 - gridH / 2;
+
+  function hubPosition(uid) {
+    if (uid === "global_skills") return { cx: CX, cy: CY - 50 };
+    if (uid === "global_topology") return { cx: CX + 140, cy: CY - 120 };
+    const pIdx = projectChannels.indexOf(uid);
+    if (pIdx >= 0) {
+      const col = pIdx % projCols;
+      const row = Math.floor(pIdx / projCols);
+      return {
+        cx: gridOriginX + col * cellW + cellW / 2,
+        cy: gridOriginY + row * cellH + cellH / 2,
+      };
+    }
+    const oIdx = otherChannels.indexOf(uid);
+    return { cx: 120, cy: 120 + Math.max(0, oIdx) * 180 };
+  }
+
+  userIds.forEach((uid) => {
+    const scope = classify(uid);
+    const items = (byUser.get(uid) || []).slice().sort((a, b) => memoryTs(b) - memoryTs(a));
+    const { cx, cy } = hubPosition(uid);
+    const staleCount = items.filter(isStaleItem).length;
+    clusters.set(uid, {
+      uid,
+      scope,
+      cx,
+      cy,
+      driftOx: 0,
+      driftOy: 0,
+      color: colorForUser(uid, scope),
+      items,
+      staleCount,
+      hubId: "__hub__" + uid,
+    });
+  });
+
+  // Кликабельная легенда project_* каналов
+  if (legendChannels) {
+    legendChannels.innerHTML = "";
+    for (const uid of userIds) {
+      if (classify(uid) !== "project") continue;
+      const cl = clusters.get(uid);
+      const row = document.createElement("div");
+      row.className = "row channel-row";
+      row.title = "Клик — фильтр и фокус на канал";
+      const staleHint = cl.staleCount ? ` · ${cl.staleCount} устар.` : "";
+      row.innerHTML =
+        `<span class="dot" style="background:${cl.color}"></span>` +
+        `${escapeHtml(prettyUid(uid))} (${cl.items.length}${staleHint})`;
+      row.onclick = () => filterByChannel(uid, { keepQuery: false, focus: true });
+      legendChannels.appendChild(row);
+    }
+  }
+
+  // Фильтр каналов в поиске
+  for (const uid of userIds) {
+    const opt = document.createElement("option");
+    opt.value = uid;
+    opt.textContent = prettyUid(uid);
+    channelFilter.appendChild(opt);
+  }
+
+  // --- Извлечение темы/подтемы ---
+  // Приоритет: metadata.scenario > metadata.tech > первый [TAG] в тексте > первое слово
+  function topicOf(item) {
+    const meta = item.metadata || {};
+    if (meta.scenario) return String(meta.scenario).trim().toLowerCase();
+    if (meta.tech) return String(meta.tech).trim().toLowerCase();
+    const text = item.text || "";
+    const m = text.match(/\[([^\]\n]{1,40})\]/);
+    if (m) return m[1].trim().toLowerCase();
+    const w = text.trim().split(/\s+/)[0] || "";
+    if (w.length >= 3 && w.length <= 24) return w.toLowerCase().replace(/[^\p{L}\p{N}_-]+/gu, "");
+    return "misc";
+  }
+  function topicIdFor(uid, key) { return "__topic__" + uid + "__" + key; }
+
+  // Размер листа зависит от длины заметки (большие заметки — заметно крупнее)
+  function leafRadius(len) {
+    return 2.2 + Math.min(4.8, Math.log2(1 + (len || 0)) * 0.85);
+  }
+
+  // Создаём узлы с группировкой по темам
+  for (const cl of clusters.values()) {
+    // Группируем факты по теме
+    const grouped = new Map();
+    for (const item of cl.items) {
+      const key = topicOf(item);
+      const list = grouped.get(key) || [];
+      list.push(item);
+      grouped.set(key, list);
+    }
+
+    // Темы с >=2 фактами превращаются в ветку; одиночные — напрямую к хабу.
+    // Дерево строим, если кластер достаточно большой и есть хотя бы 2 темы.
+    const topicEntries = [...grouped.entries()];
+    const multiTopics = topicEntries.filter(([, arr]) => arr.length >= 2);
+    const singleItems = topicEntries.filter(([, arr]) => arr.length < 2).flatMap(([, arr]) => arr);
+    const useTopics = cl.items.length >= 4 && multiTopics.length >= 2;
+
+    cl.topicKeys = useTopics ? multiTopics.map(([k]) => k) : [];
+    cl.useTopics = useTopics;
+
+    const hubR = 4.8 + Math.log2(1 + cl.items.length) * 1.75;
+    state.nodes.push({
+      id: cl.hubId, kind: "hub", isHub: true,
+      text: "", label: prettyUid(cl.uid),
+      userId: cl.uid, scope: cl.scope,
+      color: cl.color, colorRgb: parseColor(cl.color),
+      radius: hubR,
+      x: cl.cx, y: cl.cy, vx: 0, vy: 0,
+      cluster: cl.uid, parent: null,
+    });
+
+    if (useTopics) {
+      // Раскидаем темы по малой окружности вокруг хаба
+      const tN = multiTopics.length;
+      multiTopics.forEach(([key, items], ti) => {
+        const a = (ti / Math.max(1, tN)) * Math.PI * 2;
+        const tx = cl.cx + Math.cos(a) * 84;
+        const ty = cl.cy + Math.sin(a) * 84;
+        const tR = 3.1 + Math.min(4.8, Math.log2(1 + items.length) * 1.1);
+        const tid = topicIdFor(cl.uid, key);
+        state.nodes.push({
+          id: tid, kind: "topic", isHub: false,
+          text: "", label: key,
+          userId: cl.uid, scope: cl.scope,
+          color: cl.color, colorRgb: parseColor(cl.color),
+          radius: tR,
+          x: tx, y: ty, vx: 0, vy: 0,
+          cluster: cl.uid, parent: cl.hubId,
+          items,
+        });
+        state.links.push({ a: cl.hubId, b: tid, w: 1.0, kind: "hub-topic" });
+
+        for (const item of items) {
+          const leafId = item.id || (cl.uid + "_" + Math.random().toString(36).slice(2));
+          state.nodes.push({
+            id: leafId, kind: "leaf", isHub: false,
+            text: item.text || "",
+            userId: cl.uid, scope: cl.scope,
+            color: cl.color, colorRgb: parseColor(cl.color),
+            radius: leafRadius((item.text || "").length),
+            x: tx + (Math.random() - 0.5) * 54,
+            y: ty + (Math.random() - 0.5) * 54,
+            vx: 0, vy: 0,
+            cluster: cl.uid, parent: tid,
+            metadata: item.metadata, topic: key,
+            updated_at: item.updated_at || item.created_at || "",
+            stale: isStaleItem(item),
+          });
+          state.links.push({ a: tid, b: leafId, w: 1.0, kind: "topic-leaf" });
+        }
+      });
+
+      // Одиночные факты — прямо к хабу
+      for (const item of singleItems) {
+        const leafId = item.id || (cl.uid + "_" + Math.random().toString(36).slice(2));
+        state.nodes.push({
+          id: leafId, kind: "leaf", isHub: false,
+          text: item.text || "",
+          userId: cl.uid, scope: cl.scope,
+          color: cl.color, colorRgb: parseColor(cl.color),
+          radius: leafRadius((item.text || "").length),
+          x: cl.cx + (Math.random() - 0.5) * 96,
+          y: cl.cy + (Math.random() - 0.5) * 96,
+          vx: 0, vy: 0,
+          cluster: cl.uid, parent: cl.hubId,
+          metadata: item.metadata, topic: null,
+          updated_at: item.updated_at || item.created_at || "",
+          stale: isStaleItem(item),
+        });
+        state.links.push({ a: cl.hubId, b: leafId, w: 1.0, kind: "hub-leaf" });
+      }
+    } else {
+      // Плоский кластер: хаб -> листья
+      for (const item of cl.items) {
+        const leafId = item.id || (cl.uid + "_" + Math.random().toString(36).slice(2));
+        state.nodes.push({
+          id: leafId, kind: "leaf", isHub: false,
+          text: item.text || "",
+          userId: cl.uid, scope: cl.scope,
+          color: cl.color, colorRgb: parseColor(cl.color),
+          radius: leafRadius((item.text || "").length),
+          x: cl.cx + (Math.random() - 0.5) * 96,
+          y: cl.cy + (Math.random() - 0.5) * 96,
+          vx: 0, vy: 0,
+          cluster: cl.uid, parent: cl.hubId,
+          metadata: item.metadata, topic: null,
+          updated_at: item.updated_at || item.created_at || "",
+          stale: isStaleItem(item),
+        });
+        state.links.push({ a: cl.hubId, b: leafId, w: 1.0, kind: "hub-leaf" });
+      }
+    }
+  }
+  // Тонкие связи между хабами — зависят от логической группы:
+  // global <-> topology <-> каждый project (это визуально показывает, что агент
+  // использует глобальный опыт и топологию при работе над проектом).
+  const hubsByScope = { global: [], topology: [], project: [], other: [] };
+  for (const cl of clusters.values()) hubsByScope[cl.scope].push(cl.hubId);
+  for (const g of hubsByScope.global) {
+    for (const p of hubsByScope.project) state.links.push({ a: g, b: p, w: 0.25, kind: "hub-hub" });
+    for (const t of hubsByScope.topology) state.links.push({ a: g, b: t, w: 0.25, kind: "hub-hub" });
+  }
+  for (const t of hubsByScope.topology) {
+    for (const p of hubsByScope.project) state.links.push({ a: t, b: p, w: 0.25, kind: "hub-hub" });
+  }
+
+  state.byId = new Map(state.nodes.map(n => [n.id, n]));
+
+  // --- Межканальные рёбра (файл memory_cross_links.json): только визуализация, без физ. пружины
+  const crossPack = payload.cross_links && typeof payload.cross_links === "object" ? payload.cross_links : {};
+  const crossEdgesRaw = Array.isArray(crossPack.edges) ? crossPack.edges : [];
+  state.crossLinkGroups = crossEdgesRaw.length;
+  for (const e of crossEdgesRaw) {
+    const src = Array.isArray(e.source_ids) ? e.source_ids.map(String) : [];
+    const tgt = Array.isArray(e.target_ids) ? e.target_ids.map(String) : [];
+    const conf = typeof e.confidence === "number" && !Number.isNaN(e.confidence) ? e.confidence : 0.45;
+    for (const a of src) {
+      for (const b of tgt) {
+        if (a === b) continue;
+        if (!state.byId.has(a) || !state.byId.has(b)) continue;
+        state.links.push({
+          a,
+          b,
+          w: Math.max(0.15, Math.min(1, conf)),
+          kind: "cross-link",
+          crossMeta: e,
+        });
+      }
+    }
+  }
+
+  // ---------- physics ----------
+  // Пружины разной длины создают эффект дерева:
+  // hub -> topic (средняя дистанция) -> leaf (короткая), hub -> hub (далеко).
+  const PHYS = {
+    repulse: 430,
+    repulseCross: 1.9,        // межкластерное сильнее — чтобы кластеры не слипались
+    clusterPull: 0.0052,
+    globalPull: 0.00038,
+    damping: { hub: 0.72, topic: 0.80, leaf: 0.86 },
+    spring: {
+      "hub-topic":  { rest: 108, k: 0.018 },
+      "topic-leaf": { rest: 58,  k: 0.024 },
+      "hub-leaf":   { rest: 80,  k: 0.020 },
+      "hub-hub":    { rest: 260, k: 0.0035 },
+    },
+  };
+
+  function step() {
+    const nodes = state.nodes, links = state.links;
+
+    // Мягкое тяготение к центру (держит всё в кадре)
+    for (const n of nodes) {
+      n.vx += (CX - n.x) * PHYS.globalPull;
+      n.vy += (CY - n.y) * PHYS.globalPull;
+    }
+    // Тяготение к своему кластеру (центр «плывёт» — driftOx/Y)
+    for (const n of nodes) {
+      const c = clusters.get(n.cluster);
+      if (!c) continue;
+      const tcx = c.cx + (c.driftOx || 0);
+      const tcy = c.cy + (c.driftOy || 0);
+      n.vx += (tcx - n.x) * PHYS.clusterPull;
+      n.vy += (tcy - n.y) * PHYS.clusterPull;
+    }
+    // Отталкивание (O(n^2))
+    for (let i = 0; i < nodes.length; i++) {
+      const a = nodes[i];
+      for (let j = i + 1; j < nodes.length; j++) {
+        const b = nodes[j];
+        let dx = a.x - b.x, dy = a.y - b.y;
+        let d2 = dx * dx + dy * dy + 0.01;
+        const sameCluster = a.cluster === b.cluster;
+        let mul = sameCluster ? 1 : PHYS.repulseCross;
+        // Листы одной темы не отталкиваются слишком сильно — ветка должна быть плотной
+        if (sameCluster && a.kind === "leaf" && b.kind === "leaf" && a.parent === b.parent) mul *= 0.52;
+        const d = Math.sqrt(d2);
+        const f = (PHYS.repulse * mul) / d2;
+        const fx = (f * dx) / d, fy = (f * dy) / d;
+        a.vx += fx; a.vy += fy;
+        b.vx -= fx; b.vy -= fy;
+      }
+    }
+    // Пружины по типам связи (cross-link не тянут — только «нарисованная» связь)
+    for (const l of links) {
+      const spec = PHYS.spring[l.kind];
+      if (!spec) continue;
+      const a = state.byId.get(l.a), b = state.byId.get(l.b);
+      if (!a || !b) continue;
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const d = Math.sqrt(dx * dx + dy * dy) + 0.01;
+      const f = (d - spec.rest) * spec.k * l.w;
+      const fx = (f * dx) / d, fy = (f * dy) / d;
+      a.vx += fx; a.vy += fy;
+      b.vx -= fx; b.vy -= fy;
+    }
+    // Лёгкое «плавание» листьев — малая амплитуда; пружины не дают уплыть далеко
+    const bob = performance.now() * 0.000055;
+    for (const n of nodes) {
+      if (n.kind === "leaf") {
+        const ph = hashCode(n.id);
+        n.vx += 0.028 * Math.sin(bob * 1.22 + ph * 0.019);
+        n.vy += 0.028 * Math.cos(bob * 0.97 + ph * 0.017);
+      }
+    }
+
+    // Интеграция + затухание по типу узла
+    for (const n of nodes) {
+      const damp = PHYS.damping[n.kind] || PHYS.damping.leaf;
+      n.vx *= damp; n.vy *= damp;
+      n.x += n.vx; n.y += n.vy;
+    }
+  }
+
+  // ---------- rendering ----------
+  function render() {
+    ctx.fillStyle = "#0e0d0c";
+    ctx.fillRect(0, 0, W, H);
+
+    // Лёгкая «аура» вокруг центра для атмосферности
+    const halo = ctx.createRadialGradient(CX, CY, 10, CX, CY, Math.min(W, H) * 0.65);
+    halo.addColorStop(0, "rgba(50,40,28,0.28)");
+    halo.addColorStop(1, "rgba(14,13,12,0)");
+    ctx.fillStyle = halo;
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.save();
+    // камера
+    ctx.translate(CX, CY);
+    ctx.scale(state.cam.z, state.cam.z);
+    ctx.translate(-CX + state.cam.x, -CY + state.cam.y);
+
+    const hi = state.highlighted;
+    const dim = hi.size > 0;
+
+    // рёбра
+    const EDGE_ALPHA = {
+      "hub-hub":    { on: 0.07, off: 0.018, w: 0.38 },
+      "hub-topic":  { on: 0.32, off: 0.045, w: 0.72 },
+      "topic-leaf": { on: 0.26, off: 0.04,  w: 0.5 },
+      "hub-leaf":   { on: 0.25, off: 0.038, w: 0.5 },
+      "cross-link": { on: 0.36, off: 0.03,  w: 0.42 },
+    };
+    ctx.setLineDash([]);
+    for (const l of state.links) {
+      const a = state.byId.get(l.a), b = state.byId.get(l.b);
+      if (!a || !b) continue;
+      const active = dim ? (hi.has(a.id) || hi.has(b.id)) : true;
+      const spec = EDGE_ALPHA[l.kind] || EDGE_ALPHA["hub-leaf"];
+      const alpha = active ? spec.on : spec.off;
+      if (l.kind === "cross-link") {
+        ctx.setLineDash([5, 6]);
+        const wLin = Math.min(1.05, Math.max(0.28, spec.w * (0.55 + (l.w || 0.5))));
+        ctx.strokeStyle = `rgba(128, 124, 148, ${alpha})`;
+        ctx.lineWidth = wLin;
+      } else {
+        ctx.setLineDash([]);
+        ctx.strokeStyle = `rgba(172, 168, 150, ${alpha})`;
+        ctx.lineWidth = spec.w;
+      }
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+
+    // узлы
+    for (const n of state.nodes) {
+      const isHover = state.hoverId === n.id;
+      const isSelected = state.selectedId === n.id;
+      const isHi = hi.has(n.id);
+      const active = dim ? isHi : true;
+      const alpha = active ? 1 : 0.18;
+      let r = n.radius;
+      if (isHover) r *= 1.72;
+      else if (isHi) r *= 1.38;
+      else if (isSelected) r *= 1.28;
+
+      // ореол
+      const wantsGlow = isHover || isSelected || isHi || n.kind !== "leaf";
+      if (wantsGlow) {
+        const glowMul = n.kind === "hub" ? 2.45 : (n.kind === "topic" ? 2.05 : 1.82);
+        const glowR = r * glowMul;
+        const g = ctx.createRadialGradient(n.x, n.y, r * 0.4, n.x, n.y, glowR);
+        const base = isHover || isSelected
+          ? 0.42
+          : (n.kind === "hub" ? 0.16 : (n.kind === "topic" ? 0.20 : 0.26));
+        g.addColorStop(0, rgba(n.colorRgb, base * alpha));
+        g.addColorStop(1, rgba(n.colorRgb, 0));
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, glowR, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
+      // У топиков делаем полупрозрачную заливку с чётким кольцом — как узел ветки
+      if (n.kind === "topic") {
+        ctx.fillStyle = rgba(n.colorRgb, 0.32 * alpha);
+        ctx.fill();
+      } else if (n.kind === "hub") {
+        ctx.fillStyle = rgba(n.colorRgb, alpha);
+        ctx.fill();
+      } else {
+        ctx.fillStyle = rgba(n.colorRgb, 0.88 * alpha);
+        ctx.fill();
+      }
+
+      if (isSelected) {
+        ctx.lineWidth = 1.15;
+        ctx.strokeStyle = "rgba(255,255,255,0.65)";
+        ctx.stroke();
+      } else if (n.kind === "hub") {
+        ctx.lineWidth = 0.75;
+        ctx.strokeStyle = rgba(n.colorRgb, 0.45 * alpha);
+        ctx.stroke();
+      } else if (n.kind === "topic") {
+        ctx.lineWidth = 0.85;
+        ctx.strokeStyle = rgba(n.colorRgb, 0.62 * alpha);
+        ctx.stroke();
+      }
+      if (n.kind === "leaf" && n.stale) {
+        ctx.lineWidth = 1.15;
+        ctx.strokeStyle = `rgba(168,108,108,${0.82 * alpha})`;
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, r + 2.4, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // подпись у хабов и тем
+      if (n.kind === "hub" && (state.cam.z > 0.55 || isHover)) {
+        ctx.font = "12px ui-sans-serif, system-ui, sans-serif";
+        ctx.fillStyle = `rgba(234,223,200,${0.72 * alpha})`;
+        ctx.textAlign = "center";
+        ctx.fillText(n.label, n.x, n.y + r + 19);
+      } else if (n.kind === "topic" && (state.cam.z > 1.1 || isHover)) {
+        ctx.font = "10.5px ui-sans-serif, system-ui, sans-serif";
+        ctx.fillStyle = `rgba(234,223,200,${0.55 * alpha})`;
+        ctx.textAlign = "center";
+        ctx.fillText(n.label, n.x, n.y + r + 15);
+      }
+    }
+
+    ctx.restore();
+  }
+
+  function frame() {
+    if (!state.paused) {
+      // Медленный дрейф центров каналов (звездная система «дышит»)
+      const driftAmp = 14;
+      const tSlow = performance.now() * 0.000078;
+      for (const cl of clusters.values()) {
+        const ph = hashCode(cl.uid);
+        cl.driftOx = driftAmp * Math.sin(tSlow + ph * 0.016);
+        cl.driftOy = driftAmp * Math.cos(tSlow * 0.9 + ph * 0.022);
+      }
+      step(); step();
+    }
+    // Плавная камера (tz -> z)
+    state.cam.z += (state.cam.tz - state.cam.z) * 0.15;
+    // Плавная фокусировка
+    if (state.pendingFocus) {
+      const t = state.pendingFocus;
+      const dx = t.x - state.cam.x, dy = t.y - state.cam.y;
+      state.cam.x += dx * 0.18;
+      state.cam.y += dy * 0.18;
+      if (Math.abs(dx) < 0.4 && Math.abs(dy) < 0.4) state.pendingFocus = null;
+    }
+    render();
+    requestAnimationFrame(frame);
+  }
+  frame();
+
+  // Подсчёт разделов
+  const scopeCounts = { global: 0, topology: 0, project: 0, other: 0 };
+  for (const n of state.nodes) if (n.kind === "leaf") scopeCounts[n.scope]++;
+  const leafCount = state.nodes.filter(x => x.kind === "leaf").length;
+  const topicCount = state.nodes.filter(x => x.kind === "topic").length;
+  statusText.textContent =
+    `${leafCount} фактов · ${clusters.size} каналов · ${topicCount} подтем` +
+    (state.crossLinkGroups ? ` · межканальных связей (группы): ${state.crossLinkGroups}` : "") +
+    `  · global: ${scopeCounts.global} · topology: ${scopeCounts.topology} · project: ${scopeCounts.project}`;
+
+  // ---------- interaction ----------
+  function screenToWorld(sx, sy) {
+    return {
+      x: (sx - CX) / state.cam.z + CX - state.cam.x,
+      y: (sy - CY) / state.cam.z + CY - state.cam.y,
+    };
+  }
+  function pickAt(wx, wy) {
+    let best = null, bestD = Infinity;
+    for (const n of state.nodes) {
+      const dx = wx - n.x, dy = wy - n.y, d2 = dx * dx + dy * dy;
+      const pad = n.kind === "hub" ? 4 : (n.kind === "topic" ? 3 : 2.5);
+      const r = n.radius + pad;
+      if (d2 < r * r && d2 < bestD) { best = n; bestD = d2; }
+    }
+    return best;
+  }
+
+  canvas.addEventListener("pointerdown", (e) => {
+    state.drag = { sx: e.clientX, sy: e.clientY, cx: state.cam.x, cy: state.cam.y, moved: false };
+    canvas.setPointerCapture(e.pointerId);
+    canvas.classList.add("grabbing");
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    if (state.drag) {
+      const dx = e.clientX - state.drag.sx, dy = e.clientY - state.drag.sy;
+      if (Math.hypot(dx, dy) > 3) state.drag.moved = true;
+      state.cam.x = state.drag.cx + dx / state.cam.z;
+      state.cam.y = state.drag.cy + dy / state.cam.z;
+    }
+    const w = screenToWorld(e.clientX, e.clientY);
+    const n = pickAt(w.x, w.y);
+    state.hoverId = n ? n.id : null;
+    if (n) {
+      tooltip.style.display = "block";
+      tooltip.style.left = (e.clientX + 14) + "px";
+      tooltip.style.top = (e.clientY + 14) + "px";
+      const badge = `<span class="badge ${n.scope}" style="padding:1px 6px;border-radius:6px;font-size:10px;margin-right:6px">${n.scope}</span>`;
+      if (n.kind === "hub") {
+        const cl = clusters.get(n.userId);
+        tooltip.innerHTML =
+          `<div class="t-slug">${badge}${escapeHtml(n.userId)}</div>` +
+          `<div><b>${escapeHtml(n.label)}</b></div>` +
+          `<div style="color:var(--dim);margin-top:2px">записей: ${cl.items.length}${cl.useTopics ? ` · тем: ${cl.topicKeys.length}` : ""}${cl.staleCount ? ` · устар.: ${cl.staleCount}` : ""} · клик — фильтр</div>`;
+      } else if (n.kind === "topic") {
+        const count = state.nodes.filter(x => x.parent === n.id).length;
+        tooltip.innerHTML =
+          `<div class="t-slug">${badge}${escapeHtml(prettyUid(n.userId))} · подтема</div>` +
+          `<div><b>${escapeHtml(n.label)}</b></div>` +
+          `<div style="color:var(--dim);margin-top:2px">фактов в ветке: ${count}</div>`;
+      } else {
+        const preview = (n.text || "").slice(0, 180);
+        const staleTag = n.stale ? `<span class="badge stale">устар.</span> ` : "";
+        const topicLine = n.topic
+          ? `<div class="t-slug">${escapeHtml(prettyUid(n.userId))} · <i>${escapeHtml(n.topic)}</i></div>`
+          : `<div class="t-slug">${escapeHtml(prettyUid(n.userId))}</div>`;
+        tooltip.innerHTML = topicLine + staleTag + escapeHtml(preview) + (n.text.length > 180 ? "…" : "");
+      }
+    } else {
+      tooltip.style.display = "none";
+    }
+  });
+  canvas.addEventListener("pointerup", (e) => {
+    const wasMoved = state.drag && state.drag.moved;
+    state.drag = null;
+    canvas.classList.remove("grabbing");
+    if (wasMoved) return;
+    const w = screenToWorld(e.clientX, e.clientY);
+    const n = pickAt(w.x, w.y);
+    if (n) selectNode(n, { focus: false });
+    else clearSelection();
+  });
+  canvas.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const before = screenToWorld(e.clientX, e.clientY);
+    const k = Math.exp(-e.deltaY * 0.0015);
+    state.cam.tz = Math.max(0.3, Math.min(4.5, state.cam.tz * k));
+    // компенсируем, чтобы точка под курсором оставалась на месте
+    const after = {
+      x: (e.clientX - CX) / state.cam.tz + CX - state.cam.x,
+      y: (e.clientY - CY) / state.cam.tz + CY - state.cam.y,
+    };
+    state.cam.x += after.x - before.x;
+    state.cam.y += after.y - before.y;
+  }, { passive: false });
+
+  // ---------- cross-links (метаданные для агента: rationale, benefits_user_ids) ----------
+  function collectCrossLinksForMemory(memId) {
+    const mid = String(memId);
+    const out = [];
+    const seen = new Set();
+    for (const l of state.links) {
+      if (l.kind !== "cross-link" || !l.crossMeta) continue;
+      const m = l.crossMeta;
+      const eid = m.id ? String(m.id) : JSON.stringify([m.source_ids || [], m.target_ids || []]);
+      if (seen.has(eid)) continue;
+      const src = new Set((m.source_ids || []).map(String));
+      const tgt = new Set((m.target_ids || []).map(String));
+      if (!src.has(mid) && !tgt.has(mid)) continue;
+      seen.add(eid);
+      const other = [...new Set([...src, ...tgt])].filter((id) => id !== mid);
+      out.push({ meta: m, otherIds: other });
+    }
+    return out;
+  }
+
+  // ---------- channel filter ----------
+  function updateFilterUi() {
+    const active = !!channelFilter.value;
+    searchPanel.classList.toggle("filter-active", active);
+  }
+
+  function filterByChannel(userId, opts) {
+    opts = opts || {};
+    channelFilter.value = userId || "";
+    if (!opts.keepQuery) q.value = "";
+    updateFilterUi();
+    runSearch(q.value);
+    searchPanel.classList.add("open");
+    const nodes = state.nodes.filter(n => n.userId === userId);
+    state.highlighted = new Set(nodes.map(n => n.id));
+    if (opts.focus !== false) {
+      const hub = nodes.find(n => n.kind === "hub");
+      if (hub) focusNode(hub);
+    }
+  }
+
+  function clearChannelFilter() {
+    channelFilter.value = "";
+    updateFilterUi();
+    runSearch(q.value);
+  }
+
+  // ---------- selection & detail ----------
+  function selectNode(n, opts) {
+    opts = opts || {};
+    state.selectedId = n.id;
+    if (n.kind === "hub") {
+      filterByChannel(n.userId, { keepQuery: true, focus: opts.focus });
+    } else if (opts.focus) {
+      focusNode(n);
+    }
+    openDetail(n);
+  }
+  function clearSelection() {
+    state.selectedId = null;
+    detail.classList.remove("open");
+  }
+  function focusNode(n) {
+    state.pendingFocus = { x: CX - n.x, y: CY - n.y };
+    state.cam.tz = Math.max(state.cam.tz, 1.35);
+  }
+
+  function openDetail(n) {
+    detail.classList.add("open");
+    const badge = `<span class="badge ${n.scope}" style="padding:1px 7px;border-radius:8px;font-size:10px;margin-right:6px">${n.scope}</span>`;
+
+    if (n.kind === "hub") {
+      const cl = clusters.get(n.userId);
+      const topicsInfo = cl.useTopics
+        ? `<div class="meta">Темы: ${cl.topicKeys.map(k => `<code>${escapeHtml(k)}</code>`).join(", ")}</div>`
+        : "";
+      detail.innerHTML =
+        `<button class="close" title="Закрыть">×</button>` +
+        `<h3>${badge}${escapeHtml(n.label)}</h3>` +
+        `<div class="meta">${scopeLabel(n.scope)} · <code>${escapeHtml(n.userId)}</code> · ${cl.items.length} записей${cl.useTopics ? ` · ${cl.topicKeys.length} подтем` : ""}${cl.staleCount ? ` · устар.: ${cl.staleCount}` : ""}</div>` +
+        topicsInfo +
+        `<div class="body">Узел-хаб канала памяти. Кликни по любому листу — увидишь конкретный факт, или кнопки ниже.</div>` +
+        `<div class="actions">` +
+        `<button id="filter-channel">Фильтр канала</button>` +
+        `<button id="show-all">Показать все факты</button>` +
+        `<button class="danger" id="del-scope">Удалить весь канал</button>` +
+        `</div>`;
+      detail.querySelector(".close").onclick = () => clearSelection();
+      detail.querySelector("#filter-channel").onclick = () => filterByChannel(n.userId, { keepQuery: false, focus: true });
+      detail.querySelector("#show-all").onclick = () => filterByChannel(n.userId, { keepQuery: false, focus: true });
+      detail.querySelector("#del-scope").onclick = async () => {
+        const leafIds = state.nodes
+          .filter(x => x.userId === n.userId && x.kind === "leaf")
+          .map(x => x.id);
+        if (!confirm(
+          `Удалить ВЕСЬ канал «${n.label}» (${n.userId})?\n\n` +
+          `Это сотрёт ${leafIds.length} факт(ов) из Mem0 без возможности восстановления.`
+        )) return;
+        try {
+          const res = await fetch("/api/scope/" + encodeURIComponent(n.userId), { method: "DELETE" });
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          const data = await res.json();
+          removeScopeLocal(n.userId);
+          clearSelection();
+          alert(`Удалено: ${data.deleted || 0}${data.failed && data.failed.length ? `, ошибок: ${data.failed.length}` : ""}`);
+        } catch (e) {
+          alert("Не удалось удалить канал: " + e.message);
+        }
+      };
+      return;
+    }
+
+    if (n.kind === "topic") {
+      const leaves = state.nodes.filter(x => x.parent === n.id);
+      detail.innerHTML =
+        `<button class="close" title="Закрыть">×</button>` +
+        `<h3>${badge}Подтема: ${escapeHtml(n.label)}</h3>` +
+        `<div class="meta">${scopeLabel(n.scope)} · <code>${escapeHtml(n.userId)}</code> · ${leaves.length} факт(ов) в ветке</div>` +
+        `<div class="body">Группа фактов, объединённых по <code>scenario</code>/<code>tech</code> или первому <code>[тегу]</code> в тексте. Клик по листу — полный текст.</div>` +
+        `<div class="actions">` +
+        `<button id="show-branch">Показать ветку списком</button>` +
+        `<button class="danger" id="del-topic">Удалить подтему</button>` +
+        `</div>`;
+      detail.querySelector(".close").onclick = () => clearSelection();
+      detail.querySelector("#show-branch").onclick = () => {
+        q.value = ""; runSearch("");
+        state.highlighted = new Set([n.id, ...leaves.map(x => x.id)]);
+        renderHitsList(leaves);
+        searchPanel.classList.add("open");
+      };
+      detail.querySelector("#del-topic").onclick = async () => {
+        const ids = leaves.map(x => x.id);
+        if (!confirm(`Удалить ${ids.length} факт(ов) подтемы «${n.label}»?`)) return;
+        try {
+          const res = await fetch("/api/batch", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ids }),
+          });
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          for (const lid of ids) removeNodeLocal(lid);
+          removeNodeLocal(n.id);
+          clearSelection();
+        } catch (e) {
+          alert("Не удалось удалить подтему: " + e.message);
+        }
+      };
+      return;
+    }
+
+    // leaf
+    const metaStr = n.metadata && Object.keys(n.metadata).length
+      ? `<details style="margin-top:8px"><summary style="color:var(--dim);cursor:pointer;font-size:11px">метаданные</summary><pre style="font-size:11px;color:var(--dim);white-space:pre-wrap">${escapeHtml(JSON.stringify(n.metadata, null, 2))}</pre></details>`
+      : "";
+    const topicLine = n.topic
+      ? `<div class="meta">Подтема: <code>${escapeHtml(n.topic)}</code></div>`
+      : "";
+    const xlinks = collectCrossLinksForMemory(n.id);
+    let xlinksHtml = "";
+    if (xlinks.length) {
+      const blocks = xlinks.slice(0, 12).map((row) => {
+        const m = row.meta;
+        const why = escapeHtml((m.rationale_for_agent || "").slice(0, 520));
+        const rel = escapeHtml(m.relation || "?");
+        const ben = (m.benefits_user_ids || []).map((x) => escapeHtml(String(x))).join(", ");
+        const jumps = row.otherIds.slice(0, 8)
+          .map((oid) => {
+            const node = state.byId.get(oid);
+            const sn = node && node.text ? escapeHtml((node.text || "").slice(0, 80)) : escapeHtml(oid.slice(0, 12));
+            return `<button type="button" class="xlink-jump" data-mid="${escapeHtml(oid)}" style="display:block;width:100%;text-align:left;margin:5px 0;padding:8px 9px;background:#1e1b17;border:1px solid #353028;border-radius:8px;cursor:pointer;font-size:11px;color:var(--fg)">${sn}…</button>`;
+          })
+          .join("");
+        return `<div style="margin-bottom:11px;padding:9px;background:rgba(255,255,255,0.02);border-radius:9px;border:1px solid #2e2923">
+<div style="font-size:10px;color:var(--dim)">${escapeHtml(m.source || "")} · <code>${rel}</code>${ben ? ` · ориентир для: <code>${ben}</code>` : ""}</div>
+<div style="font-size:12px;margin-top:5px;line-height:1.45">${why || "—"}</div>
+${jumps ? `<div style="margin-top:7px">${jumps}</div>` : ""}
+</div>`;
+      }).join("");
+      xlinksHtml = `<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px"><div style="font-size:11px;color:var(--dim);margin-bottom:7px;text-transform:uppercase;letter-spacing:.06em">связи между каналами</div>${blocks}</div>`;
+    }
+    const staleBadge = n.stale ? `<span class="badge stale">устарела (&gt;${STALE_DAYS}d)</span> ` : "";
+    const dateLine = n.updated_at
+      ? `<div class="meta">обновлено: ${escapeHtml(formatTs(n.updated_at))}</div>`
+      : "";
+    detail.innerHTML =
+      `<button class="close" title="Закрыть">×</button>` +
+      `<h3>${badge}Факт памяти ${staleBadge}</h3>` +
+      `<div class="meta">${scopeLabel(n.scope)} · <code>${escapeHtml(n.userId)}</code></div>` +
+      dateLine +
+      topicLine +
+      `<div class="body">${escapeHtml(n.text)}</div>` +
+      `<div class="meta" style="margin-top:14px">id: <code>${escapeHtml(n.id)}</code> · длина: ${(n.text || "").length} символов</div>` +
+      metaStr +
+      xlinksHtml +
+      `<div class="actions">` +
+      `<button id="copy">Копировать</button>` +
+      `<button id="focus">Навести</button>` +
+      `<button class="danger" id="del">Удалить</button>` +
+      `</div>`;
+    detail.querySelector(".close").onclick = () => clearSelection();
+    detail.querySelector("#copy").onclick = () => navigator.clipboard.writeText(n.text || "");
+    detail.querySelector("#focus").onclick = () => focusNode(n);
+    detail.querySelectorAll(".xlink-jump").forEach((btn) => {
+      btn.onclick = () => {
+        const oid = btn.getAttribute("data-mid");
+        const tn = oid ? state.byId.get(oid) : null;
+        if (tn) selectNode(tn, { focus: true });
+      };
+    });
+    detail.querySelector("#del").onclick = async () => {
+      if (!confirm("Удалить этот факт из Mem0?\n\n" + (n.text || "").slice(0, 200))) return;
+      try {
+        const res = await fetch("/api/memory/" + encodeURIComponent(n.id), { method: "DELETE" });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        removeNodeLocal(n.id);
+        clearSelection();
+      } catch (e) {
+        alert("Не удалось удалить: " + e.message);
+      }
+    };
+  }
+
+  function removeNodeLocal(id) {
+    const n = state.byId.get(id);
+    if (!n) return;
+    state.nodes = state.nodes.filter(x => x.id !== id);
+    state.links = state.links.filter(l => l.a !== id && l.b !== id);
+    state.byId.delete(id);
+    const cl = clusters.get(n.userId);
+    if (cl) cl.items = cl.items.filter(it => it.id !== id);
+    state.highlighted.delete(id);
+    // Если удалили последний лист в теме — убрать и тему
+    if (n.parent && n.kind === "leaf") {
+      const parent = state.nodes.find(x => x.id === n.parent);
+      if (parent && parent.kind === "topic") {
+        const stillHasChildren = state.nodes.some(x => x.parent === parent.id);
+        if (!stillHasChildren) removeNodeLocal(parent.id);
+      }
+    }
+    updateStatus();
+  }
+
+  function removeScopeLocal(userId) {
+    const ids = state.nodes.filter(x => x.userId === userId).map(x => x.id);
+    state.nodes = state.nodes.filter(x => x.userId !== userId);
+    state.links = state.links.filter(l => {
+      const a = state.byId.get(l.a), b = state.byId.get(l.b);
+      return !(a && a.userId === userId) && !(b && b.userId === userId);
+    });
+    for (const id of ids) state.byId.delete(id);
+    clusters.delete(userId);
+    state.highlighted = new Set([...state.highlighted].filter(x => state.byId.has(x)));
+    updateStatus();
+  }
+
+  function updateStatus() {
+    const leafCount = state.nodes.filter(x => x.kind === "leaf").length;
+    const topicCount = state.nodes.filter(x => x.kind === "topic").length;
+    statusText.textContent =
+      `${leafCount} фактов в ${clusters.size} каналах` +
+      (topicCount ? ` · ${topicCount} подтем` : "");
+  }
+
+  // ---------- search ----------
+  function renderHitsList(list) {
+    hits.innerHTML = "";
+    if (!list.length) {
+      hits.innerHTML = `<div class="empty">ничего не найдено</div>`;
+      return;
+    }
+    const scopeOrder = { global: 0, topology: 1, project: 2, other: 3 };
+    const kindOrder = { hub: 0, topic: 1, leaf: 2 };
+    const sorted = [...list].sort((a, b) => {
+      if (a.kind === "leaf" && b.kind === "leaf") {
+        const ta = memoryTs(a), tb = memoryTs(b);
+        if (ta !== tb) return tb - ta;
+      }
+      const sa = scopeOrder[a.scope] ?? 3;
+      const sb = scopeOrder[b.scope] ?? 3;
+      if (sa !== sb) return sa - sb;
+      const ua = (a.userId || "").localeCompare(b.userId || "");
+      if (ua !== 0) return ua;
+      const ka = kindOrder[a.kind] ?? 2;
+      const kb = kindOrder[b.kind] ?? 2;
+      if (ka !== kb) return ka - kb;
+      return (a.label || a.text || "").localeCompare(b.label || b.text || "");
+    });
+
+    let lastGroup = "";
+    sorted.slice(0, 80).forEach(n => {
+      const groupKey = `${n.scope}::${n.userId}`;
+      if (groupKey !== lastGroup) {
+        lastGroup = groupKey;
+        const title = document.createElement("div");
+        title.className = "group-title";
+        title.textContent = `${n.scope} · ${prettyUid(n.userId)}`;
+        hits.appendChild(title);
+      }
+      const div = document.createElement("div");
+      div.className = "hit";
+      const badge = `<span class="badge ${n.scope}">${n.scope}</span>`;
+      const slug = `<span class="slug">${escapeHtml(prettyUid(n.userId))}</span>`;
+      let label;
+      if (n.kind === "hub") {
+        label = `<b>канал: ${escapeHtml(n.label)}</b> ${slug}`;
+      } else if (n.kind === "topic") {
+        label = `<b>подтема: ${escapeHtml(n.label)}</b> ${slug}`;
+      } else {
+        const snip = escapeHtml((n.text || "").slice(0, 130));
+        const more = (n.text || "").length > 130 ? "…" : "";
+        const staleTag = n.stale ? `<span class="badge stale">устар.</span> ` : "";
+        const topicTag = n.topic ? ` <span class="slug">· ${escapeHtml(n.topic)}</span>` : "";
+        label = `${staleTag}${snip}${more} ${slug}${topicTag}`;
+      }
+      div.innerHTML = badge + label;
+      div.onmouseenter = () => { state.hoverId = n.id; };
+      div.onmouseleave = () => { state.hoverId = null; };
+      div.onclick = () => {
+        selectNode(n, { focus: true });
+        state.highlighted = new Set([n.id]);
+      };
+      hits.appendChild(div);
+    });
+  }
+
+  function runSearch(term) {
+    const t = term.trim().toLowerCase();
+    const channel = channelFilter.value;
+    const staleFilter = staleOnly && staleOnly.checked;
+    updateFilterUi();
+    if (!t && !channel && !staleFilter) {
+      searchPanel.classList.remove("open");
+      state.highlighted = new Set();
+      hits.innerHTML = "";
+      return;
+    }
+    const found = [];
+    for (const n of state.nodes) {
+      if (channel && n.userId !== channel) continue;
+      if (staleFilter && n.kind === "leaf" && !n.stale) continue;
+      if (!t) {
+        if (n.kind === "leaf" || n.kind === "hub") found.push(n);
+        continue;
+      }
+      if (n.kind === "hub") {
+        if (n.label.toLowerCase().includes(t) || n.userId.toLowerCase().includes(t)) found.push(n);
+      } else if (n.kind === "topic") {
+        if (n.label.toLowerCase().includes(t)) found.push(n);
+      } else if ((n.text || "").toLowerCase().includes(t)) {
+        found.push(n);
+      } else if (n.topic && n.topic.toLowerCase().includes(t)) {
+        found.push(n);
+      }
+    }
+    state.highlighted = new Set(found.map(x => x.id));
+    renderHitsList(found);
+    searchPanel.classList.add("open");
+  }
+  q.addEventListener("input", e => runSearch(e.target.value));
+  channelFilter.addEventListener("change", () => runSearch(q.value));
+  if (staleOnly) staleOnly.addEventListener("change", () => runSearch(q.value));
+  clearFilterBtn.addEventListener("click", () => { clearChannelFilter(); });
+  q.addEventListener("focus", () => { if (q.value.trim() || channelFilter.value || (staleOnly && staleOnly.checked)) searchPanel.classList.add("open"); });
+
+  document.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+      e.preventDefault(); q.focus(); q.select();
+    } else if (e.key === "Escape") {
+      q.value = "";
+      channelFilter.value = "";
+      if (staleOnly) staleOnly.checked = false;
+      updateFilterUi();
+      runSearch("");
+      clearSelection();
+      state.highlighted = new Set();
+    } else if (e.key === "o" && !e.ctrlKey && !e.metaKey && document.activeElement !== q) {
+      window.location.href = "/ops.html";
+    } else if (e.key === " " && document.activeElement !== q) {
+      e.preventDefault();
+      state.paused = !state.paused;
+    }
+  });
+})();
+</script>
+</body>
+</html>

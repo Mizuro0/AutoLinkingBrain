@@ -1,0 +1,8 @@
+# CodeGraph repo list (optional)
+
+# One absolute or relative path per line. Lines starting with # are ignored.
+# If empty or missing, `python brain.py codegraph` auto-discovers repos near this install.
+
+# Example:
+# ../my-backend
+# ../my-frontend

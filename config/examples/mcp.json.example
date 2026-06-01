@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "AutoLinkingBrain": {
+      "command": "/path/to/autolinkingbrain/.venv/bin/python",
+      "args": ["/path/to/autolinkingbrain/brain_server.py"],
+      "cwd": "${workspaceFolder}"
+    },
+    "codegraph": {
+      "command": "codegraph",
+      "args": ["serve", "--mcp"]
+    }
+  }
+}
