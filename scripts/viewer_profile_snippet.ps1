@@ -8,7 +8,7 @@ function mem0v {
     $hostName = if ($env:MEM0_VIEWER_HOST) { $env:MEM0_VIEWER_HOST } else { "mem0viewer" }
     $port = if ($env:VIEWER_PORT) { $env:VIEWER_PORT } else { "8501" }
     if ($Run) {
-        & "$root\scripts\start_viewer.ps1"
+        & "$root\scripts\start_brain_viewer.ps1"
     } else {
         Start-Process "http://${hostName}:$port/"
     }

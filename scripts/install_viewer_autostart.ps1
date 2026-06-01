@@ -1,8 +1,8 @@
-# Creates a Startup shortcut: hidden PowerShell runs start_viewer.ps1 at logon.
+# Creates a Startup shortcut: hidden PowerShell runs Brain Viewer at logon.
 # Run as normal user. To remove: delete "Mem0 Viewer.lnk" from shell:startup.
 $ErrorActionPreference = "Stop"
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$startViewer = Join-Path $PSScriptRoot "start_viewer.ps1"
+$startViewer = Join-Path $PSScriptRoot "start_brain_viewer.ps1"
 $startup = [Environment]::GetFolderPath("Startup")
 $lnkPath = Join-Path $startup "Mem0 Viewer.lnk"
 

@@ -1,0 +1,3 @@
+# Optional — legacy Streamlit viewer only (viewer.py).
+# Primary Brain Viewer uses viewer_server.py and does not need Streamlit.
+streamlit>=1.56,<2

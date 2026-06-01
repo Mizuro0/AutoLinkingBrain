@@ -1,4 +1,4 @@
-"""Общие настройки Mem0/Chroma для brain_server.py и viewer.py — коллекция и путь должны совпадать."""
+"""Общие настройки Mem0/Chroma — brain_server, viewer_server и hooks должны совпадать."""
 
 import os
 from pathlib import Path

@@ -4,7 +4,10 @@
     "sessionStart": [
       {
         "command": "\"/path/to/autolinkingbrain/.venv/bin/python\" \"/path/to/autolinkingbrain/.cursor/hooks/session_mem0_bootstrap.py\"",
-        "timeout": 45
+        "timeout": 45,
+        "env": {
+          "MEM0_TELEMETRY": "false"
+        }
       }
     ],
     "afterAgentResponse": [
@@ -12,6 +15,7 @@
         "command": "\"/path/to/autolinkingbrain/.venv/bin/python\" \"/path/to/autolinkingbrain/.cursor/hooks/mem0_autolog_after_response.py\"",
         "timeout": 180,
         "env": {
+          "MEM0_TELEMETRY": "false",
           "MEM0_AUTOLOG": "1",
           "MEM0_AUTOLOG_STRICT": "1",
           "MEM0_AUTOLOG_USE_OLLAMA": "1",
@@ -25,6 +29,7 @@
         "command": "\"/path/to/autolinkingbrain/.venv/bin/python\" \"/path/to/autolinkingbrain/.cursor/hooks/mem0_autolog_post_tool.py\"",
         "timeout": 45,
         "env": {
+          "MEM0_TELEMETRY": "false",
           "MEM0_TOOLLOG": "1",
           "MEM0_TOOLLOG_TARGET": "project"
         }

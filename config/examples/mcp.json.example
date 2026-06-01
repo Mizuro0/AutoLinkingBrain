@@ -3,7 +3,10 @@
     "AutoLinkingBrain": {
       "command": "/path/to/autolinkingbrain/.venv/bin/python",
       "args": ["/path/to/autolinkingbrain/brain_server.py"],
-      "cwd": "${workspaceFolder}"
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "MEM0_TELEMETRY": "false"
+      }
     },
     "codegraph": {
       "command": "codegraph",

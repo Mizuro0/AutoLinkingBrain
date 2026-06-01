@@ -88,7 +88,10 @@ python brain.py start
 
 После обновления кода **перезапустите viewer**.
 
-Legacy Streamlit: `streamlit run viewer.py`
+### Legacy Streamlit (устарело)
+
+`viewer.py` + Streamlit **не развиваются**. Установка: `pip install -r requirements-legacy.txt`, запуск: `streamlit run viewer.py`.  
+Скрипты `start_viewer.ps1` и автозагрузка теперь вызывают Brain Viewer.
 
 ## CodeGraph
 

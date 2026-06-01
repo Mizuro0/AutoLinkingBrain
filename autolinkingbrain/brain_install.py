@@ -14,6 +14,11 @@ from pathlib import Path
 from autolinkingbrain.paths import REPO_ROOT as ROOT
 
 
+def _mem0_env() -> dict[str, str]:
+    """Env vars merged into MCP server and hook subprocesses."""
+    return {"MEM0_TELEMETRY": "false"}
+
+
 def _backup(path: Path) -> None:
     if path.is_file():
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -165,14 +170,16 @@ def _merge_hooks(py: Path) -> Path:
     autolog = ROOT / ".cursor" / "hooks" / "mem0_autolog_after_response.py"
     post_tool = ROOT / ".cursor" / "hooks" / "mem0_autolog_post_tool.py"
 
-    hooks["sessionStart"] = [{"command": f'"{py}" "{session}"', "timeout": 45}] + strip_ours(
-        list(hooks.get("sessionStart") or [])
-    )
+    mem0_env = _mem0_env()
+    hooks["sessionStart"] = [
+        {"command": f'"{py}" "{session}"', "timeout": 45, "env": dict(mem0_env)}
+    ] + strip_ours(list(hooks.get("sessionStart") or []))
     hooks["afterAgentResponse"] = [
         {
             "command": f'"{py}" "{autolog}"',
             "timeout": 180,
             "env": {
+                **mem0_env,
                 "MEM0_AUTOLOG": "1",
                 "MEM0_AUTOLOG_STRICT": "1",
                 "MEM0_AUTOLOG_MIN_CHARS": "400",
@@ -186,7 +193,7 @@ def _merge_hooks(py: Path) -> Path:
         {
             "command": f'"{py}" "{post_tool}"',
             "timeout": 45,
-            "env": {"MEM0_TOOLLOG": "1", "MEM0_TOOLLOG_TARGET": "project"},
+            "env": {**mem0_env, "MEM0_TOOLLOG": "1", "MEM0_TOOLLOG_TARGET": "project"},
         }
     ] + strip_ours(list(hooks.get("postToolUse") or []))
 
@@ -203,6 +210,7 @@ def _merge_mcp(py: Path, *, with_codegraph: bool) -> Path:
         "command": str(py),
         "args": [str(ROOT / "brain_server.py")],
         "cwd": "${workspaceFolder}",
+        "env": _mem0_env(),
     }
     if with_codegraph and shutil.which("codegraph"):
         servers["codegraph"] = {"command": "codegraph", "args": ["serve", "--mcp"]}

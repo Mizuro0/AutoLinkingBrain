@@ -1,14 +1,42 @@
-import streamlit as st
-import chromadb
+"""
+DEPRECATED — legacy Streamlit UI for Mem0.
+
+Use the Brain Viewer instead (graph + Ops dashboard):
+
+  python brain.py start
+  http://127.0.0.1:8501/
+
+This module remains for backward compatibility. Install optional deps:
+
+  pip install -r requirements-legacy.txt
+"""
+from __future__ import annotations
+
 import sys
+import warnings
 from pathlib import Path
-from chromadb.config import Settings
-from mem0 import Memory
 
 ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+warnings.warn(
+    "viewer.py (Streamlit) is deprecated; use 'python brain.py start' (viewer_server + viewer_web).",
+    DeprecationWarning,
+    stacklevel=1,
+)
+
+try:
+    import streamlit as st
+except ImportError as exc:
+    raise SystemExit(
+        "Legacy Streamlit viewer requires: pip install -r requirements-legacy.txt\n"
+        "Recommended: python brain.py start  (Brain Viewer, no Streamlit)"
+    ) from exc
+
+from mem0 import Memory
+
+from autolinkingbrain.mem0_fetch import discover_user_ids
 from autolinkingbrain.mem0_kb_log import count_get_all_rows, log_mem0
 from autolinkingbrain.mem0_settings import (
     CHROMA_COLLECTION,
@@ -19,9 +47,14 @@ from autolinkingbrain.mem0_settings import (
 )
 
 config = mem0_vector_config()
-st.set_page_config(page_title="Мозг Cursor", page_icon="🧠")
+st.set_page_config(page_title="Мозг Cursor (legacy)", page_icon="🧠")
 
-# Подключаемся к базе (кэшируем, чтобы не переподключаться при каждом клике)
+st.warning(
+    "**Deprecated.** Use **Brain Viewer**: `python brain.py start` → http://127.0.0.1:8501/ "
+    "(interactive graph + Ops). This Streamlit page is kept for compatibility only."
+)
+
+
 @st.cache_resource
 def get_memory():
     return Memory.from_config(config_dict=config)
@@ -31,52 +64,22 @@ mem0_db = get_memory()
 
 
 @st.cache_data(show_spinner=False)
-def discover_project_slugs(_refresh: int, resolved_chroma: str, collection_name: str) -> tuple[str, ...]:
-    """
-    Уникальные имена проектов из метаданных Chroma (user_id вида project_<slug>).
-    _refresh — ключ сброса кэша (кнопка «Обновить список»).
-    """
-    del _refresh  # только для инвалидации кэша Streamlit
-    try:
-        client = chromadb.PersistentClient(
-            path=resolved_chroma,
-            settings=Settings(anonymized_telemetry=False),
-        )
-        col = client.get_collection(collection_name)
-    except Exception:
-        return ()
-
-    prefix = "project_"
-    seen: set[str] = set()
-    offset = 0
-    batch_size = 2000
-    while True:
-        batch = col.get(include=["metadatas"], limit=batch_size, offset=offset)
-        metas = batch.get("metadatas") or []
-        if not metas:
-            break
-        for meta in metas:
-            if not meta:
-                continue
-            uid = meta.get("user_id")
-            if isinstance(uid, str) and uid.startswith(prefix):
-                seen.add(uid[len(prefix):])
-        if len(metas) < batch_size:
-            break
-        offset += batch_size
-
-    return tuple(sorted(seen))
+def discover_project_slugs(_refresh: int) -> tuple[str, ...]:
+    """Project slugs from Chroma user_id channels (project_*)."""
+    del _refresh
+    return tuple(
+        sorted(uid[len("project_") :] for uid in discover_user_ids() if uid.startswith("project_"))
+    )
 
 
 _MANUAL_PROJECT = "— Ввести вручную —"
 
-st.title("🧠 База знаний Cursor")
+st.title("🧠 База знаний Cursor (legacy)")
 st.info(
     "**Как смотреть проект `backend`:** в режиме «Конкретный проект» выберите или введите slug **`backend`** "
     "(канал в Mem0 — `project_backend`, это **имя корневой папки** workspace в Cursor). "
     "Нажмите **«Загрузить память»** — список сам не обновляется. "
-    "После ответа агента смотрите **`<repo>/.cursor/mem0_autolog_last.txt`** — там последний статус хука (Cursor не всегда передаёт `env` из hooks.json). "
-    "Подробный лог: тот же каталог **`mem0_autolog_hook.log`** или файл-маркер **`mem0_autolog_debug.on`** в `.cursor`."
+    "После ответа агента смотрите **`<repo>/.cursor/mem0_autolog_last.txt`** — там последний статус хука."
 )
 
 with st.sidebar:
@@ -108,13 +111,7 @@ elif scope == "Конкретный проект":
         if st.button("Обновить список", key="refresh_project_slugs"):
             st.session_state["_project_slug_refresh"] += 1
 
-    slugs = list(
-        discover_project_slugs(
-            st.session_state["_project_slug_refresh"],
-            str(chroma_path_resolved()),
-            CHROMA_COLLECTION,
-        )
-    )
+    slugs = list(discover_project_slugs(st.session_state["_project_slug_refresh"]))
 
     project_name = ""
     if slugs:
@@ -140,7 +137,6 @@ elif scope == "Конкретный проект":
 st.write(f"**Текущий ID поиска:** `{user_id}`")
 st.markdown("---")
 
-# Смена канала — сбрасываем кэш списка (иначе покажутся чужие факты до перезагрузки)
 if st.session_state.get("_viewer_user_id") != user_id:
     st.session_state["_viewer_user_id"] = user_id
     st.session_state["_viewer_memories"] = None
@@ -150,7 +146,7 @@ if st.button("Загрузить память"):
         raw_response = mem0_db.get_all(filters={"user_id": user_id}, top_k=500)
         log_mem0(
             "read",
-            "viewer.get_all",
+            "viewer.legacy.get_all",
             user_id=user_id,
             top_k=500,
             rows=count_get_all_rows(raw_response),
@@ -179,14 +175,14 @@ else:
             if st.button("🗑 Удалить факт", key=f"del_{user_id}_{mid}"):
                 try:
                     mem0_db.delete(mid)
-                    log_mem0("write", "viewer.delete", user_id=user_id, memory_id=mid)
+                    log_mem0("write", "viewer.legacy.delete", user_id=user_id, memory_id=mid)
                 except Exception as exc:
                     st.error(f"Не удалось удалить: {exc}")
                 else:
                     raw_response = mem0_db.get_all(filters={"user_id": user_id}, top_k=500)
                     log_mem0(
                         "read",
-                        "viewer.get_all",
+                        "viewer.legacy.get_all",
                         user_id=user_id,
                         top_k=500,
                         rows=count_get_all_rows(raw_response),

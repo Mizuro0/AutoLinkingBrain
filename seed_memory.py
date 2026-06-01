@@ -52,7 +52,7 @@ def main() -> None:
         ),
         (
             PROJECT_USER,
-            f"[PYTHON] [SETUP] (Updated: {NOW}): viewer.py и brain_server.py должны использовать mem0_vector_config() чтобы коллекция Chroma совпадала.",
+            f"[PYTHON] [SETUP] (Updated: {NOW}): viewer_server.py и brain_server.py должны использовать mem0_vector_config() чтобы коллекция Chroma совпадала.",
         ),
         (
             TOPOLOGY_ID,

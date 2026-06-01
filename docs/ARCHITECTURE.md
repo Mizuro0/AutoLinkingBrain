@@ -54,7 +54,8 @@ flowchart TB
 |-----------|--------|------------|
 | **MCP** (`brain_server.py`) | Cursor через `~/.cursor/mcp.json` | Инструменты памяти для агента |
 | **Hooks** (`.cursor/hooks/*.py`) | Cursor через `~/.cursor/hooks.json` | Контекст сессии + автолог без MCP |
-| **Viewer** (`brain.py start`) | Пользователь / `start.bat` | Визуализация и Ops-метрики |
+| **Viewer** (`brain.py start`) | Пользователь / `start.bat` | Brain Viewer: `viewer_server` + `viewer_web` (граф + Ops) |
+| **Legacy UI** (`viewer.py`) | Вручную, Streamlit | **Deprecated** — см. `requirements-legacy.txt` |
 | **CodeGraph** | Отдельный MCP + CLI | Структура кода, не память |
 
 **Важно:** `start.bat` не поднимает MCP. Cursor делает это сам при старте IDE.
@@ -100,7 +101,18 @@ Slug резолвится в `autolinkingbrain/mem0_project_slug.py` (monorepo, 
 
 1. **`retrieveChain`** → hybrid search per channel → truncate → MCP response (not logged to agent context from metrics)
 2. **`sessionStart` hook** → `get_all` compact list → `additional_context`
-3. **Viewer** → Chroma direct + cross_links JSON
+3. **Viewer** → `mem0_fetch.fetch_all_memories` + cross_links JSON; UI in `viewer_web/`
+
+## Документация по слоям
+
+| Слой | Файл |
+|------|------|
+| Корень | [README.md](../README.md) |
+| Пакет | [autolinkingbrain/README.md](../autolinkingbrain/README.md) |
+| Hooks | [.cursor/hooks/README.md](../.cursor/hooks/README.md) |
+| Viewer UI | [viewer_web/README.md](../viewer_web/README.md) |
+| Scripts | [scripts/README.md](../scripts/README.md) |
+| Contributing | [docs/CONTRIBUTING.md](CONTRIBUTING.md) |
 
 ## Файлы состояния (local, в .gitignore)
 
@@ -121,7 +133,7 @@ Slug резолвится в `autolinkingbrain/mem0_project_slug.py` (monorepo, 
 
 ## Расширение
 
-- Новые MCP tools → `brain_server.py`
-- Новая логика Mem0 → `autolinkingbrain/`
+- Новые MCP tools → `autolinkingbrain/mcp_tools/` + `register()` in `__init__.py`
+- Новая логика Mem0 → `autolinkingbrain/` (`mcp_context.py` для shared helpers)
 - Новые hook events → `.cursor/hooks/` + update `brain_install._merge_hooks`
-- Viewer UI → `viewer_web/` + endpoints in `viewer_server.py`
+- Viewer UI → `viewer_web/` + endpoints in `viewer_server.py` (not legacy `viewer.py`)

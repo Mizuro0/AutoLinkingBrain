@@ -55,7 +55,7 @@ autolinkingbrain/
 ├── brain.py                 # Unified launcher
 ├── brain_server.py          # MCP entry point
 ├── viewer_server.py         # HTTP API + static SPA
-├── viewer.py                # Legacy Streamlit viewer
+├── viewer.py                # Deprecated Streamlit viewer (see requirements-legacy.txt)
 ├── seed_memory.py           # Demo seed data
 ├── start.bat / start.sh
 ├── autolinkingbrain/        # Library package
@@ -102,6 +102,17 @@ Agent protocol: [docs/AUTONOMOUS_KNOWLEDGE_GRAPH_PROTOCOL.md](docs/AUTONOMOUS_KN
 
 Restart viewer after updates: `python brain.py start`
 
+### Legacy Streamlit (`viewer.py`)
+
+**Deprecated** — kept for compatibility only. New features go to Brain Viewer only.
+
+```bash
+pip install -r requirements-legacy.txt
+streamlit run viewer.py
+```
+
+Prefer `python brain.py start`. Scripts `start_viewer.ps1` and autostart now launch Brain Viewer.
+
 ## Optional scripts
 
 | Script | Purpose |
@@ -129,3 +140,5 @@ python -m pytest tests/ -q
 ```
 
 CI runs the same suite on push/PR to `main` (`.github/workflows/ci.yml`).
+
+Documentation targets: [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) (≥80% layer READMEs, 100% package module docstrings).

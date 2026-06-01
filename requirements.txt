@@ -1,4 +1,3 @@
-# Прямые зависимости проекта (версии согласованы с текущим .venv).
+# Core runtime (MCP server, Brain Viewer HTTP, hooks, scripts).
 mcp>=1.27.0,<2
 mem0ai>=2.0.0,<3
-streamlit>=1.56,<2

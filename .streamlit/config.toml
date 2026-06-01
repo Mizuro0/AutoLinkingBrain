@@ -1,4 +1,4 @@
-# Локальный viewer: без авто-открытия браузера при автозапуске; слушаем только localhost.
+# Legacy Streamlit viewer only (deprecated). Brain Viewer uses viewer_server.py on the same port.
 [server]
 headless = true
 address = "127.0.0.1"

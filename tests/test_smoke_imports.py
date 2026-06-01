@@ -21,6 +21,8 @@ def test_core_package_imports() -> None:
         "autolinkingbrain.brain_link_store",
         "autolinkingbrain.mem0_fetch",
         "autolinkingbrain.mem0_kb_log",
+        "autolinkingbrain.mcp_constants",
+        "autolinkingbrain.mcp_context",
     ]
     for name in modules:
         mod = importlib.import_module(name)
