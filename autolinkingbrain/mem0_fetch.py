@@ -2,40 +2,37 @@
 
 from __future__ import annotations
 
-from typing import Any
-
-import chromadb
-from chromadb.config import Settings
-from mem0 import Memory
+from typing import Any, TYPE_CHECKING
 
 from autolinkingbrain.brain_link_store import load_cross_links
 from autolinkingbrain.mem0_kb_log import count_get_all_rows, log_mem0
 from autolinkingbrain.mem0_lifecycle import is_stale_memory, stale_days_default
 from autolinkingbrain.mem0_settings import CHROMA_COLLECTION, chroma_path_resolved, mem0_vector_config
 
+if TYPE_CHECKING:
+    from mem0 import Memory
+
 _mem: Memory | None = None
 
 
 def get_memory() -> Memory:
     """Lazy Mem0 client (avoids Ollama/Chroma init until first use)."""
+    from mem0 import Memory
+
     global _mem
     if _mem is None:
         _mem = Memory.from_config(config_dict=mem0_vector_config())
     return _mem
 
 
-def classify_scope(user_id: str) -> str:
-    if user_id == "global_skills":
-        return "global"
-    if user_id == "global_topology":
-        return "topology"
-    if user_id.startswith("project_"):
-        return "project"
-    return "other"
+from autolinkingbrain.mem0_channels import classify_scope  # noqa: E402 — re-export
 
 
 def discover_user_ids() -> list[str]:
     """All unique user_id values from Chroma metadata."""
+    import chromadb
+    from chromadb.config import Settings
+
     client = chromadb.PersistentClient(
         path=str(chroma_path_resolved()),
         settings=Settings(anonymized_telemetry=False),

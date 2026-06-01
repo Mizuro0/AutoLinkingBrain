@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from autolinkingbrain.mem0_fetch import classify_scope
+from autolinkingbrain.mem0_channels import classify_scope
 from autolinkingbrain.mem0_hybrid_search import hybrid_mem_search, tokenize
 from autolinkingbrain.mem0_kb_log import normalize_search_results
 
