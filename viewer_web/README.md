@@ -20,4 +20,10 @@ Static SPA served by `viewer_server.py` (default `http://127.0.0.1:8501/`).
 
 Data loading uses `autolinkingbrain.mem0_fetch.fetch_all_memories`.
 
+## Security
+
+- Default bind: `VIEWER_HOST=127.0.0.1` (local only).
+- Remote bind (`0.0.0.0`): set **`VIEWER_AUTH_TOKEN`** — required on all `/api/*` via `Authorization: Bearer <token>` or `X-Viewer-Token`.
+- Static HTML is served without token (SPA); API mutations stay protected when token is set.
+
 Legacy table UI: deprecated `viewer.py` (Streamlit) — see [requirements-legacy.txt](../requirements-legacy.txt).

@@ -10,7 +10,9 @@
 #   -SkipOllamaCheck    не проверять Ollama
 #   -PullOllamaModels   ollama pull llama3.2 и nomic-embed-text (если ollama в PATH)
 #   -WithCodeGraphMcp   добавить codegraph в mcp.json (если codegraph в PATH)
-#   -NoBackup           не создавать .bak копии конфигов перед merge
+#
+# MCP/hooks merge uses autolinkingbrain.brain_install (same as python brain.py install).
+# Prefer: python brain.py install  — cross-platform, single source of truth.
 #
 #Requires -Version 5.1
 param(
@@ -19,8 +21,7 @@ param(
     [switch]$SkipHooks,
     [switch]$SkipOllamaCheck,
     [switch]$PullOllamaModels,
-    [switch]$WithCodeGraphMcp,
-    [switch]$NoBackup
+    [switch]$WithCodeGraphMcp
 )
 
 $ErrorActionPreference = "Stop"
@@ -42,14 +43,6 @@ $HooksJsonPath = Join-Path $CursorDir "hooks.json"
 function Write-Step([string]$Message) {
     Write-Host ""
     Write-Host "==> $Message" -ForegroundColor Cyan
-}
-
-function Backup-File([string]$Path) {
-    if ($NoBackup -or -not (Test-Path $Path)) { return }
-    $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    $bak = "$Path.bak-$stamp"
-    Copy-Item -LiteralPath $Path -Destination $bak -Force
-    Write-Host "  backup: $bak" -ForegroundColor DarkGray
 }
 
 function Get-SystemPython {
@@ -79,180 +72,27 @@ function Test-PythonVersion([string]$Version) {
     return ($major -gt 3) -or ($major -eq 3 -and $minor -ge 10)
 }
 
-function Read-JsonFile([string]$Path) {
-    if (-not (Test-Path $Path)) { return $null }
-    $raw = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
-    if ([string]::IsNullOrWhiteSpace($raw)) { return $null }
-    return ($raw | ConvertFrom-Json)
-}
-
-function Write-JsonFile([string]$Path, [object]$Object) {
-    $dir = Split-Path $Path -Parent
-    if (-not (Test-Path $dir)) {
-        New-Item -ItemType Directory -Path $dir -Force | Out-Null
-    }
-    $json = $Object | ConvertTo-Json -Depth 20
-    # ConvertTo-Json on Windows PowerShell 5.1 may emit UTF-16 BOM — acceptable for Cursor.
-    Set-Content -LiteralPath $Path -Value $json -Encoding UTF8
-}
-
-function Test-IsOurHookCommand([string]$Command) {
-    if ([string]::IsNullOrWhiteSpace($Command)) { return $false }
-    return ($Command -match "session_mem0_bootstrap\.py") `
-        -or ($Command -match "mem0_autolog_after_response\.py") `
-        -or ($Command -match "mem0_autolog_post_tool\.py")
-}
-
-function Merge-HooksJson {
+function Invoke-BrainInstallMerge {
     param(
-        [string]$Path,
         [string]$Python,
-        [string]$SessionScript,
-        [string]$AutologScript,
-        [string]$PostToolScript
+        [switch]$SkipMcp,
+        [switch]$SkipHooks,
+        [switch]$WithCodeGraph
     )
-
-    Backup-File $Path
-
-    $root = Read-JsonFile $Path
-    if ($null -eq $root) {
-        $root = [pscustomobject]@{
-            version = 1
-            hooks   = [pscustomobject]@{}
-        }
-    }
-    if ($null -eq $root.version) { $root | Add-Member -NotePropertyName version -NotePropertyValue 1 -Force }
-    if ($null -eq $root.hooks) {
-        $root | Add-Member -NotePropertyName hooks -NotePropertyValue ([pscustomobject]@{}) -Force
-    }
-
-    $hooks = @{}
-    foreach ($prop in $root.hooks.PSObject.Properties) {
-        $eventName = $prop.Name
-        $entries = @()
-        foreach ($entry in @($prop.Value)) {
-            if ($null -eq $entry) { continue }
-            $cmd = [string]$entry.command
-            if (-not (Test-IsOurHookCommand $cmd)) {
-                $entries += $entry
-            }
-        }
-        $hooks[$eventName] = $entries
-    }
-
-    $sessionCmd = "`"$Python`" `"$SessionScript`""
-    $autologCmd = "`"$Python`" `"$AutologScript`""
-    $postToolCmd = "`"$Python`" `"$PostToolScript`""
-
-    if (-not $hooks.ContainsKey("sessionStart")) { $hooks["sessionStart"] = @() }
-    $hooks["sessionStart"] = @(
-        [pscustomobject]@{
-            command = $sessionCmd
-            timeout = 45
-        }
-    ) + @($hooks["sessionStart"])
-
-    if (-not $hooks.ContainsKey("afterAgentResponse")) { $hooks["afterAgentResponse"] = @() }
-    $hooks["afterAgentResponse"] = @(
-        [pscustomobject]@{
-            command = $autologCmd
-            timeout = 180
-            env     = [pscustomobject]@{
-                MEM0_AUTOLOG              = "1"
-                MEM0_AUTOLOG_STRICT       = "1"
-                MEM0_AUTOLOG_MIN_CHARS    = "400"
-                MEM0_AUTOLOG_USE_OLLAMA   = "1"
-                MEM0_AUTOLOG_OLLAMA_FALLBACK = "1"
-                MEM0_AUTOLOG_TARGET       = "project"
-            }
-        }
-    ) + @($hooks["afterAgentResponse"])
-
-    if (-not $hooks.ContainsKey("postToolUse")) { $hooks["postToolUse"] = @() }
-    $hooks["postToolUse"] = @(
-        [pscustomobject]@{
-            command = $postToolCmd
-            timeout = 45
-            env     = [pscustomobject]@{
-                MEM0_TOOLLOG        = "1"
-                MEM0_TOOLLOG_TARGET = "project"
-            }
-        }
-    ) + @($hooks["postToolUse"])
-
-    $hookObj = [pscustomobject]@{}
-    foreach ($key in ($hooks.Keys | Sort-Object)) {
-        $hookObj | Add-Member -NotePropertyName $key -NotePropertyValue $hooks[$key] -Force
-    }
-
-    $out = [pscustomobject]@{
-        version = 1
-        hooks   = $hookObj
-    }
-    Write-JsonFile $Path $out
-}
-
-function Merge-McpJson {
-    param(
-        [string]$Path,
-        [string]$Python,
-        [string]$ServerScript,
-        [switch]$AddCodeGraph
-    )
-
-    Backup-File $Path
-
-    $root = Read-JsonFile $Path
-    if ($null -eq $root) {
-        $root = [pscustomobject]@{
-            mcpServers = [pscustomobject]@{}
-        }
-    }
-    if ($null -eq $root.mcpServers) {
-        $root | Add-Member -NotePropertyName mcpServers -NotePropertyValue ([pscustomobject]@{}) -Force
-    }
-
-    $servers = @{}
-    foreach ($prop in $root.mcpServers.PSObject.Properties) {
-        $servers[$prop.Name] = $prop.Value
-    }
-
-    $servers["AutoLinkingBrain"] = [pscustomobject]@{
-        command = $Python
-        args    = @($ServerScript)
-        cwd     = '${workspaceFolder}'
-    }
-
-    if ($AddCodeGraph) {
-        $cg = Get-Command codegraph -ErrorAction SilentlyContinue
-        if ($cg) {
-            $servers["codegraph"] = [pscustomobject]@{
-                command = "codegraph"
-                args    = @("serve", "--mcp")
-            }
-            Write-Host "  + codegraph MCP entry (command on PATH: $($cg.Source))" -ForegroundColor Green
-        } else {
-            Write-Host '  ! -WithCodeGraphMcp: codegraph not in PATH - entry skipped' -ForegroundColor Yellow
-        }
-    }
-
-    $serverObj = [pscustomobject]@{}
-    foreach ($key in ($servers.Keys | Sort-Object)) {
-        $serverObj | Add-Member -NotePropertyName $key -NotePropertyValue $servers[$key] -Force
-    }
-
-    $out = [pscustomobject]@{
-        mcpServers = $serverObj
-    }
-
-    # Preserve unknown top-level keys from original file (e.g. future Cursor fields).
-    foreach ($prop in $root.PSObject.Properties) {
-        if ($prop.Name -ne "mcpServers") {
-            $out | Add-Member -NotePropertyName $prop.Name -NotePropertyValue $prop.Value -Force
-        }
-    }
-
-    Write-JsonFile $Path $out
+    $code = @"
+import sys
+from pathlib import Path
+sys.path.insert(0, r'$RepoRoot')
+from autolinkingbrain.brain_install import merge_cursor_config
+merge_cursor_config(
+    Path(r'$Python'),
+    skip_mcp=$($SkipMcp.IsPresent),
+    skip_hooks=$($SkipHooks.IsPresent),
+    with_codegraph=$($WithCodeGraph.IsPresent),
+)
+"@
+    & $Python -c $code
+    if ($LASTEXITCODE -ne 0) { throw "merge_cursor_config failed (exit $LASTEXITCODE)" }
 }
 
 function Test-OllamaReachable {
@@ -340,24 +180,15 @@ if (-not $SkipOllamaCheck) {
     }
 }
 
-# --- MCP ---
-if (-not $SkipMcp) {
-    Write-Step "Merge Cursor MCP config"
-    Write-Host "  -> $McpJsonPath"
-    Merge-McpJson -Path $McpJsonPath -Python $PythonExe -ServerScript $BrainServer -AddCodeGraph:$WithCodeGraphMcp
-    Write-Host '  AutoLinkingBrain entry updated (cwd=${workspaceFolder})' -ForegroundColor Green
+# --- MCP + hooks (brain_install — includes MEM0_TELEMETRY=false) ---
+if (-not $SkipMcp -or -not $SkipHooks) {
+    Write-Step "Merge Cursor config (brain_install)"
+    if (-not $SkipMcp) { Write-Host "  -> $McpJsonPath" }
+    if (-not $SkipHooks) { Write-Host "  -> $HooksJsonPath" }
+    Invoke-BrainInstallMerge -Python $PythonExe -SkipMcp:$SkipMcp -SkipHooks:$SkipHooks -WithCodeGraph:$WithCodeGraphMcp
+    Write-Host '  AutoLinkingBrain entry updated (cwd=${workspaceFolder}, MEM0_TELEMETRY=false)' -ForegroundColor Green
 } else {
-    Write-Step "Skip MCP (-SkipMcp)"
-}
-
-# --- Hooks ---
-if (-not $SkipHooks) {
-    Write-Step "Merge Cursor hooks (sessionStart + afterAgentResponse + postToolUse)"
-    Write-Host "  -> $HooksJsonPath"
-    Merge-HooksJson -Path $HooksJsonPath -Python $PythonExe -SessionScript $HookSession -AutologScript $HookAutolog -PostToolScript $HookPostTool
-    Write-Host "  Mem0 hooks registered (other hooks preserved)" -ForegroundColor Green
-} else {
-    Write-Step "Skip hooks (-SkipHooks)"
+    Write-Step "Skip MCP and hooks (-SkipMcp -SkipHooks)"
 }
 
 # --- Done ---

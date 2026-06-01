@@ -69,7 +69,7 @@ def register(mcp: FastMCP, mctx: McpContext) -> None:
         )
         text = _link_line(source_project, target, lt, reason_clean)
 
-        mctx.mem_add(text, TOPOLOGY_ID, source="mcp:registerDependency", source_detail=f"target={target}")
+        mctx.mem_add(text, TOPOLOGY_ID, infer=False, source="mcp:registerDependency", source_detail=f"target={target}")
         log_mem0(
             "write",
             "mcp.registerDependency",

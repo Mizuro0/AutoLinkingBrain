@@ -83,7 +83,7 @@ Slug резолвится в `autolinkingbrain/mem0_project_slug.py` (monorepo, 
 | `brain_metrics` | `brain_events.jsonl`, aggregation, Ops API |
 | `brain_link_store` | `memory_cross_links.json` CRUD |
 | `cross_link_mem0_sync` | Sync JSON → Mem0 metadata + topology |
-| `brain_install` | Merge `mcp.json` / `hooks.json` |
+| `brain_install` | Merge `~/.cursor/mcp.json` and hooks (`merge_cursor_config`; used by `install.ps1` too) |
 | `codegraph_init` | Batch `codegraph init -i` |
 | `paths` | `REPO_ROOT` для путей к данным |
 
@@ -137,3 +137,4 @@ Slug резолвится в `autolinkingbrain/mem0_project_slug.py` (monorepo, 
 - Новая логика Mem0 → `autolinkingbrain/` (`mcp_context.py` для shared helpers)
 - Новые hook events → `.cursor/hooks/` + update `brain_install._merge_hooks`
 - Viewer UI → `viewer_web/` + endpoints in `viewer_server.py` (not legacy `viewer.py`)
+- Viewer remote bind: set `VIEWER_AUTH_TOKEN` when `VIEWER_HOST=0.0.0.0`

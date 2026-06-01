@@ -48,6 +48,12 @@ def register(mcp: FastMCP, mctx: McpContext) -> None:
             infer_from_text=(summary,),
         )
         p_user_id = f"project_{project_id}"
-        mctx.mem_add(line, p_user_id, source="mcp:markIndexingComplete", source_detail=f"project={project_id}")
+        mctx.mem_add(
+            line,
+            p_user_id,
+            infer=False,
+            source="mcp:markIndexingComplete",
+            source_detail=f"project={project_id}",
+        )
         log_mem0("write", "mcp.markIndexingComplete", user_id=p_user_id, project_id=project_id)
         return f"Отметка индексации сохранена в канале проекта.{mctx.routing_note(project_id, context_path, used_ctx)}"

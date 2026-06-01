@@ -221,6 +221,23 @@ def _merge_mcp(py: Path, *, with_codegraph: bool) -> Path:
     return path
 
 
+def merge_cursor_config(
+    py: Path | None = None,
+    *,
+    skip_mcp: bool = False,
+    skip_hooks: bool = False,
+    with_codegraph: bool = False,
+) -> list[Path]:
+    """Merge AutoLinkingBrain into ~/.cursor/mcp.json and hooks.json (single source for PS + Python)."""
+    interpreter = py or _venv_python()
+    written: list[Path] = []
+    if not skip_mcp:
+        written.append(_merge_mcp(interpreter, with_codegraph=with_codegraph))
+    if not skip_hooks:
+        written.append(_merge_hooks(interpreter))
+    return written
+
+
 def run_install(
     *,
     skip_venv: bool = False,

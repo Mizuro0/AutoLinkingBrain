@@ -8,6 +8,8 @@
 
 Запуск: python viewer_server.py   (или scripts/start_brain_viewer.ps1)
 Порт: переменная окружения VIEWER_PORT (по умолчанию 8501).
+Безопасность: по умолчанию VIEWER_HOST=127.0.0.1; при VIEWER_HOST=0.0.0.0 задайте VIEWER_AUTH_TOKEN
+(Bearer или заголовок X-Viewer-Token) для всех /api/* запросов.
 """
 from __future__ import annotations
 
@@ -44,6 +46,21 @@ _MIMES = {
 }
 
 
+def _viewer_auth_token() -> str:
+    return os.environ.get("VIEWER_AUTH_TOKEN", "").strip()
+
+
+def viewer_auth_ok(headers) -> bool:
+    """When VIEWER_AUTH_TOKEN is set, require Bearer or X-Viewer-Token header on /api/*."""
+    token = _viewer_auth_token()
+    if not token:
+        return True
+    auth = headers.get("Authorization", "")
+    if auth == f"Bearer {token}":
+        return True
+    return headers.get("X-Viewer-Token", "") == token
+
+
 def _fetch_metrics(*, days: float = 7.0, recent: int = 80) -> dict:
     try:
         from autolinkingbrain.brain_metrics import aggregate_for_viewer
@@ -71,9 +88,18 @@ class Handler(BaseHTTPRequestHandler):
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
         self._send(status, body, "application/json; charset=utf-8")
 
+    def _require_api_auth(self) -> bool:
+        if viewer_auth_ok(self.headers):
+            return True
+        self._send_json(401, {"error": "unauthorized", "hint": "Set Authorization: Bearer <VIEWER_AUTH_TOKEN>"})
+        return False
+
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/") or "/"
+        if path.startswith("/api/"):
+            if not self._require_api_auth():
+                return
         if path == "/api/memories":
             return self._send_json(
                 200,
@@ -101,11 +127,14 @@ class Handler(BaseHTTPRequestHandler):
                     "stale_days": stale_days_default(),
                     "viewer_api": "1.1",
                     "metrics": True,
+                    "auth_required": bool(_viewer_auth_token()),
                 },
             )
         return self._serve_static(path)
 
     def do_DELETE(self) -> None:  # noqa: N802
+        if not self._require_api_auth():
+            return
         parsed = urlparse(self.path)
         path = parsed.path
 
@@ -222,10 +251,17 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> None:
     host = os.environ.get("VIEWER_HOST", "127.0.0.1")
     port = int(os.environ.get("VIEWER_PORT", "8501"))
+    if host in ("0.0.0.0", "::") and not _viewer_auth_token():
+        print(
+            "WARNING: VIEWER_HOST binds all interfaces but VIEWER_AUTH_TOKEN is unset — "
+            "API is open on the network. Set VIEWER_AUTH_TOKEN for remote access.",
+            file=sys.stderr,
+        )
     httpd = ThreadingHTTPServer((host, port), Handler)
+    auth_note = "auth=token" if _viewer_auth_token() else "auth=localhost-only"
     print(
-        f"Brain viewer: http://{host}:{port}/  "
-        f"(chroma={chroma_path_resolved()}, collection={CHROMA_COLLECTION})"
+        f"Brain viewer: http://{host}:{port}/ ({auth_note}, "
+        f"chroma={chroma_path_resolved()}, collection={CHROMA_COLLECTION})"
     )
     try:
         httpd.serve_forever()

@@ -262,7 +262,9 @@ class McpContext:
             return None
         rows = raw.get("results", []) if isinstance(raw, dict) else raw or []
         candidates = [
-            r for r in rows if isinstance(r, dict) and INDEXING_MARK_TOKEN in (r.get("memory") or "")
+            r
+            for r in rows
+            if isinstance(r, dict) and self._is_indexing_mark_memory(r.get("memory") or "")
         ]
         if not candidates:
             return None
@@ -272,6 +274,21 @@ class McpContext:
 
         candidates.sort(key=_ts, reverse=True)
         return candidates[0].get("memory")
+
+    @staticmethod
+    def _is_indexing_mark_memory(text: str) -> bool:
+        """True only for real markIndexingComplete rows, not autolog bullets mentioning the token."""
+        body = (text or "").strip()
+        if INDEXING_MARK_TOKEN not in body or "completed_at=" not in body:
+            return False
+        if body.startswith("[CURSOR]") or "[AUT_LOG" in body[:80]:
+            return False
+        normalized = body
+        if normalized.startswith("[SOURCE:"):
+            end = normalized.find("]")
+            if end != -1:
+                normalized = normalized[end + 1 :].strip()
+        return normalized.startswith(INDEXING_MARK_TOKEN)
 
     @staticmethod
     def health_status_block(mark_text: str | None) -> str:

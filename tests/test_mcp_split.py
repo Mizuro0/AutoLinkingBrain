@@ -33,23 +33,27 @@ def test_mem0_env_helper() -> None:
 
 
 def test_merge_mcp_includes_telemetry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from autolinkingbrain.brain_install import _merge_mcp
+    from autolinkingbrain.brain_install import _merge_mcp, merge_cursor_config
 
     cursor_dir = tmp_path / ".cursor"
     cursor_dir.mkdir()
     mcp_path = cursor_dir / "mcp.json"
+    hooks_path = cursor_dir / "hooks.json"
     monkeypatch.setattr("autolinkingbrain.brain_install.Path.home", lambda: tmp_path)
 
     py = tmp_path / "python.exe"
     py.write_text("", encoding="utf-8")
 
     with patch("autolinkingbrain.brain_install.ROOT", tmp_path):
-        out = _merge_mcp(py, with_codegraph=False)
+        written = merge_cursor_config(py, with_codegraph=False)
 
-    assert out == mcp_path
+    assert mcp_path in written
+    assert hooks_path in written
     data = json.loads(mcp_path.read_text(encoding="utf-8"))
     entry = data["mcpServers"]["AutoLinkingBrain"]
     assert entry["env"]["MEM0_TELEMETRY"] == "false"
+    hooks = json.loads(hooks_path.read_text(encoding="utf-8"))
+    assert hooks["hooks"]["sessionStart"][0]["env"]["MEM0_TELEMETRY"] == "false"
 
 
 def test_register_tools_wires_all_domains() -> None:
