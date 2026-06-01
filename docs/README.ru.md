@@ -60,6 +60,7 @@ MCP с `"cwd": "${workspaceFolder}"` копирует rule в **каждый о�
 | `MEM0_KB_LOG` | Лог чтений/записей | `1` |
 | `MEM0_USE_MCP_ROOTS` | Slug из MCP roots/list | `1` |
 | `MCP_HYBRID_SEARCH` | BM25+vector в retrieveChain | `1` |
+| `MEM0_MCP_INFER` | LLM-extraction в storeKnowledge | `0` (быстрая запись) |
 | `MEM0_STALE_DAYS` | Порог «устарело» в viewer | `90` |
 | `VIEWER_PORT` | Порт viewer | `8501` |
 | `VIEWER_HOST` | Bind viewer | `127.0.0.1` |

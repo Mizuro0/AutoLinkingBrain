@@ -85,6 +85,7 @@ autolinkingbrain/
 | `VIEWER_AUTH_TOKEN` | (unset) | Optional Bearer token for all `/api/*` when set |
 | `MEM0_TELEMETRY` | `false` | Set by installer in MCP/hooks env |
 | `MCP_HYBRID_SEARCH` | `1` | BM25 + vector RRF in `retrieveChain` |
+| `MEM0_MCP_INFER` | `0` | `storeKnowledge` LLM extraction via Ollama (`1` = slow, risks MCP timeout) |
 | `MEM0_METRICS` | `1` | Write `.cursor/brain_events.jsonl` |
 
 Full list: [docs/README.ru.md](docs/README.ru.md#переменные-окружения).

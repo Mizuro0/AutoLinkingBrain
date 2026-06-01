@@ -15,6 +15,11 @@ OLLAMA_LLM = os.environ.get("OLLAMA_LLM", "llama3.2")
 OLLAMA_EMBED = os.environ.get("OLLAMA_EMBED", "nomic-embed-text")
 
 
+def mcp_store_infer_enabled() -> bool:
+    """LLM fact extraction on MCP storeKnowledge (default off — avoids Ollama timeouts)."""
+    return os.environ.get("MEM0_MCP_INFER", "0").strip().lower() in ("1", "true", "yes")
+
+
 def chroma_path_resolved() -> Path:
     """Абсолютный путь к каталогу Chroma (для UI и отладки)."""
     return Path(DB_PATH).expanduser().resolve()

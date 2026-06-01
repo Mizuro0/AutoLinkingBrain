@@ -11,6 +11,7 @@ from mcp.server.fastmcp.server import Context
 from autolinkingbrain.mcp_constants import GLOBAL_ID
 from autolinkingbrain.mcp_context import McpContext
 from autolinkingbrain.mem0_kb_log import log_mem0
+from autolinkingbrain.mem0_settings import mcp_store_infer_enabled
 
 
 def register(mcp: FastMCP, mctx: McpContext) -> None:
@@ -35,6 +36,9 @@ def register(mcp: FastMCP, mctx: McpContext) -> None:
         Если не передан — сервер попытается извлечь путь из поля text.
 
         Завершение индексации по протоколу — отдельным вызовом mark_indexing_complete(), не через этот текст.
+
+        Запись напрямую в Chroma (infer=False по умолчанию) — без LLM-extraction через Ollama.
+        MEM0_MCP_INFER=1 — включить медленный infer (не рекомендуется при массовой индексации).
         """
         await mctx.refresh_project_slug_from_mcp_roots(ctx)
         project_id, used_ctx = mctx.resolve_project(
@@ -60,6 +64,7 @@ def register(mcp: FastMCP, mctx: McpContext) -> None:
             mctx.mem_add(
                 enriched_text,
                 u_id,
+                infer=mcp_store_infer_enabled(),
                 source="mcp:storeKnowledge",
                 source_detail=f"tech={tech} scenario={scenario} scope={scope}",
             )
