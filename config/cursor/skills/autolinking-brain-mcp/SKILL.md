@@ -1,165 +1,108 @@
 ---
 name: autolinking-brain-mcp
 description: >-
-  Uses the AutoLinkingBrain Mem0 MCP (knowledge graph) across any workspace:
-  checkProjectHealth, reindex protocol, registerDependency, retrieveChain,
-  storeKnowledge, markIndexingComplete. Use when the user works with Mem0,
-  AutoLinkingBrain, project indexing, incoming dependencies, cross-repo
-  contracts, sessionContextPack, or asks for repo overview/stack/architecture
-  while this MCP is configured.
+  AutoLinkingBrain Mem0 MCP — mandatory automated workflow for every coding session:
+  checkProjectHealth first, runProjectAnalysis when AUTO_RUN, retrieveChain before
+  contract changes, storeKnowledge after every significant decision. Use always
+  when AutoLinkingBrain MCP is configured, or for Mem0, indexing, architecture,
+  cross-repo contracts, sessionContextPack, retrieveChain, storeKnowledge,
+  markIndexingComplete, gc, or project overview.
 ---
 
-# AutoLinkingBrain (Mem0 MCP) — any workspace
+# AutoLinkingBrain (Mem0 MCP) — automated
 
-Installed globally to `~/.cursor/skills/autolinking-brain-mcp/` by `python brain.py install` and refreshed when the MCP server starts.
+Installed to `~/.cursor/skills/autolinking-brain-mcp/` by `brain.py install|onboard|sync-agent` and refreshed on MCP server start.
 
-## MCP server id for `call_mcp_tool`
+## Automated session loop (MANDATORY)
 
-The `server` argument is **not** always the `mcp.json` key `AutoLinkingBrain`.
+Execute without waiting for the user to ask:
 
-- **Global** (`%USERPROFILE%\.cursor\mcp.json`): **`user-AutoLinkingBrain`** (i.e. `user-` + servers key).
-- **Project-scoped** (`.cursor/mcp.json`): **`project-<n>-<workspaceFolderBasename>-AutoLinkingBrain`** — if calls fail, read the exact id from Cursor MCP logs/UI.
+```
+Task start
+  → checkProjectHealth {}  (or sessionContextPack once if recall needed)
+  → if ANALYSIS required_* + AUTO_RUN → runProjectAnalysis (one batch)
 
-Prefer **global** MCP with `"cwd": "${workspaceFolder}"` so **`user-AutoLinkingBrain`** stays stable across repos.
+Before contract/API changes
+  → retrieveChain { query, linked_projects }
 
-## CodeGraph companion (if configured)
+After each significant decision / bugfix / API change
+  → storeKnowledge { text EN, tech, scenario, context_path?, scope }
 
-MCP id: typically **`user-codegraph`**. Needs `.codegraph/` per repo (`codegraph init -i` or `scripts/init_codegraph_project.ps1`).
+Reindex required
+  → registerDependency → storeKnowledge → markIndexingComplete
 
-| Intent | MCP |
-|---|---|
-| Health, reindex, incoming deps, stored decisions | **AutoLinkingBrain** |
-| Callers, trace, impact, symbol search | **CodeGraph** |
+Task end (if no storeKnowledge yet)
+  → storeKnowledge summary fact
+```
 
-Do not grep/read for structure when CodeGraph tools suffice. After `checkProjectHealth`, use CodeGraph before blind file scans for architecture questions.
+**Mem0 is not filled by chat or markdown docs alone.** Hooks = autolog. Structured memory = **`storeKnowledge`**.
 
-## Repo / project questions → graph before files
+## MCP server id
 
-For overview, stack, architecture, “what is this project”, onboarding, high-level survey of the **opened workspace**:
+- **Global** `~/.cursor/mcp.json`: **`user-AutoLinkingBrain`**
+- **Project** `.cursor/mcp.json`: `project-…-AutoLinkingBrain` (check MCP logs if calls fail)
 
-1. **First tool call:** MCP **`checkProjectHealth`** with `{}` and the correct **`server`** (default **`user-AutoLinkingBrain`**).
-2. **Do not** use `read_file`, `list_dir`, `grep`, `glob_file_search`, `codebase_search` (or similar) **until** `checkProjectHealth` returns or errors.
-3. Summarize `STATUS`, `REINDEX_PROTOCOL`, **INDEXING COVERAGE**, **INCOMING DEPENDENCIES** for the user (user language per user rules; default concise).
-4. Then optionally **`sessionContextPack`** or **`retrieveChain`**, then local files as needed.
+## Graph before files
 
-`sessionStart` **additional_context** from Mem0 is **supplementary** — it does **not** replace `checkProjectHealth` for indexing / reindex / incoming links.
+For repo overview, stack, architecture, onboarding:
 
-If MCP errors or is unavailable: say so in one short sentence, then continue with files **without** claiming health was read.
+1. **`checkProjectHealth`** before read/grep/glob/codebase_search.
+2. Summarize STATUS, REINDEX_PROTOCOL, INDEXING COVERAGE, ANALYSIS STATUS, INCOMING DEPENDENCIES.
+3. Then sessionContextPack / retrieveChain, then local files.
 
-## Reindex required (`REINDEX_PROTOCOL`)
+sessionStart hook context is supplementary — not a substitute for checkProjectHealth.
 
-When health says full indexing is needed:
+## storeKnowledge (auto-write rules)
 
-1. Scan **internal modules** for this stack (Gradle `project(":…")`, Maven `<module>`, npm/pnpm workspaces, Go `replace`, Cargo workspaces, etc.).
-2. Scan **outbound APIs** (HTTP clients, OpenAPI/Swagger, gRPC/proto, shared DTO packages).
-3. For each finding: **`registerDependency`** with `link_type` `module` or `api` and **English, factual** `reason`.
-4. Scan entrypoints and integration surfaces; **`storeKnowledge`** project summary (`scope` `project` or `both`), **English** body, accurate `tech` / `scenario`.
-5. Re-check **`checkProjectHealth`** — **INDEXING COVERAGE** must show `COVERAGE_STATUS: sufficient` (or acceptable GAPS with user approval).
-6. **`markIndexingComplete(summary="…")`** with **English** summary (final mark for health). With `MEM0_INDEXING_STRICT=1` (default), the tool **rejects** if GAPS remain.
+| Field | Rule |
+|-------|------|
+| text | English, one fact, include file path when possible |
+| tech | kotlin, python, node, … |
+| scenario | architecture, bugfix, api_contract, indexing |
+| scope | project (local) / both (reusable) |
+| context_path | monorepo subproject path → correct project_<slug> |
 
-### Coverage thresholds (env)
+Parallel calls: max ~3 storeKnowledge at once; retry on Connection closed.
 
-| Env | Default |
-|-----|---------|
-| `MEM0_INDEXING_MIN_FACTS` | `8` |
-| `MEM0_INDEXING_REQUIRED_SCENARIOS` | `architecture,api_contract` |
-| `MEM0_INDEXING_MIN_OUTBOUND_DEPS` | `0` |
-| `MEM0_INDEXING_STRICT` | `1` |
+## Reindex (REINDEX_PROTOCOL: required)
 
-Countable facts exclude indexing mark, autolog, and topology `[LINK]` rows.
+1. Scan modules + outbound APIs (Gradle/Maven/npm/…).
+2. registerDependency per link (English reason).
+3. storeKnowledge summaries (architecture + api_contract).
+4. checkProjectHealth → COVERAGE sufficient.
+5. markIndexingComplete (only this tool counts; autolog does not).
 
-Treat **incoming** real links as **contracts** — document public surfaces; avoid breaking changes without a migration plan.
-
-## Indexing mark (`FINAL_INDEXING_MARK`)
-
-Only an explicit MCP **`markIndexingComplete`** call counts as indexed (`infer=False` on the server).
-
-Hook autolog or other memories that *mention* `FINAL_INDEXING_MARK` do **not** satisfy **`checkProjectHealth`**. Always finish reindex with the tool, not a chat summary or autolog line.
+Coverage env: MEM0_INDEXING_MIN_FACTS=8, REQUIRED_SCENARIOS=architecture,api_contract, STRICT=1.
 
 ## Before changing shared contracts
 
-Call **`retrieveChain`** with `linked_projects=["<dependent_slug>"]` (stable repo slug, not paths). If the tool returns nothing, state that and proceed carefully. Do not invent tool output.
+retrieveChain with linked_projects=["dependent_slug"]. If empty, say so and proceed carefully.
 
-## `storeKnowledge` / graph writes
-
-- **`tech`**: concrete stack tokens (Kotlin, Spring, Node, Python, FastAPI, …).
-- **`scenario`**: e.g. `architecture`, `bugfix`, `api_contract`, `indexing`.
-- **`scope`**: `project` | `global` | `both`.
-- **Memory body and factual dependency reasons**: **English** only (clear, searchable).
-
-## Monorepo folder (several repos under one Cursor workspace)
-
-When the opened folder is a **parent** (e.g. `feature/`) containing subprojects (`backend/`, `crm/`, …):
-
-1. Pass **`context_path`** on every write/read tool with the **file or subfolder** you are working on  
-   (`backend/src/...`, `crm/api/...`). Memories must land in `project_backend`, `project_crm` — **not** `project_feature`.
-2. If you omit `context_path`, the MCP server **auto-infers** a path from `text`, `reason`, `summary`, or `query` when those fields contain file paths.
-3. Include at least one **concrete path** in `storeKnowledge.text` when you cannot pass `context_path` explicitly.
-4. Tool responses echo the resolved channel: `→ project_<slug> (auto-routed from path in payload: …)`.
-
-Per-subproject override (optional): `<subproject>/.cursor/mem0_project_slug` with one line (`backend`, `crm_server`, …).
-
-## Provenance on writes
-
-New Mem0 rows are prefixed with **`[SOURCE: …]`** (English): e.g. `mcp:storeKnowledge`, `hook:postToolUse tool=Read`, `hook:afterAgentResponse`. Disable with `MEM0_PROVENANCE=0`. Use in viewer/search to see origin.
-
-## CodeGraph index (companion MCP)
-
-Requires `codegraph` on PATH. **Auto-discovery is ON by default** (same layout as Mem0 slug):
-
-- sibling git repos next to `mcp_server` (e.g. `D:\codes\*` when server lives in `D:\codes`)
-- child repos under `CODEGRAPH_WORKSPACE` or cwd (`feature/backend`, …)
-- depth `CODEGRAPH_SCAN_DEPTH` (default 2)
-
-```bash
-python brain.py codegraph list      # see discovered paths
-python brain.py codegraph init      # init all discovered
-python brain.py codegraph status
-```
-
-Monorepo only: `CODEGRAPH_WORKSPACE=D:\feature` or `python brain.py codegraph init --workspace D:\feature`.
-
-Manual extras (optional): `codegraph_repos.txt` or `CODEGRAPH_REPOS` — only if auto-discovery misses a repo.
-Disable auto: `CODEGRAPH_AUTO_DISCOVER=0` or `--no-auto`.
-
-## Token discipline
-
-- Prefer **`sessionContextPack`** once for broad context instead of redundant `checkProjectHealth` + `retrieveChain` for the same goal.
-- **`retrieveChain`**: narrow `query`, `top_k_per_scope` ≤ 8 unless necessary; `per_memory_chars` ~800–1200.
-- Hybrid **BM25 + vector (RRF)** is on by default (`MCP_HYBRID_SEARCH=1`) — good for exact tokens (API names, `FINAL_INDEXING_MARK`, file paths) plus semantic recall.
-- Do not dump full MCP payloads in chat unless needed.
-
-## Tool naming
-
-Use the **camelCase** tool names exposed by the server (e.g. `checkProjectHealth`, `storeKnowledge`). If Cursor allowlist blocks tools, align names with the server and user MCP config.
-
-Full protocol: `docs/AUTONOMOUS_KNOWLEDGE_GRAPH_PROTOCOL.md` in the AutoLinkingBrain repo.
-
-## Qwen code review (optional companion MCP)
-
-If **`QwenReviewer`** is configured in `~/.cursor/mcp.json` (installed via `python brain.py install`):
+## Companion MCPs
 
 | Intent | MCP |
-|---|---|
-| Review git diff / staged changes with Mem0 contracts + CodeGraph | **QwenReviewer** |
+|--------|-----|
+| Memory, health, GC, analysis | AutoLinkingBrain |
+| Symbols, trace, impact | CodeGraph (`user-codegraph`) |
+| Diff review | QwenReviewer |
+| ARCHITECTURE.generated.md | ArchitectureCurator (profile full) |
 
-Tools: `reviewDiff`, `reviewStaged`, `getReviewBudget`. Model: `OLLAMA_REVIEW_MODEL` (default `qwen2.5-coder:7b`, 32K context).
-Use after indexing is healthy; review output is Russian markdown findings — Cursor agent applies fixes.
+## AUTO_RUN analysis
+
+When health shows ANALYSIS STATUS required_* + AUTO_RUN yes → runProjectAnalysis without asking. CLI fallback: `python brain.py analyze auto`.
 
 ## Knowledge GC
 
-| Intent | MCP / CLI |
-|---|---|
-| Audit autolog/duplicates/stale | `auditKnowledge` or `python brain.py gc audit` |
-| Purge (dry-run default) | `purgeMemories` with `confirm_token` |
-| Exact duplicates | `listDuplicateMemories` / `brain.py gc dedupe-exact` |
+auditKnowledge → purgeMemories (dry_run first). CLI: `brain.py gc audit|purge`.
 
-## Project analysis (AUTO_RUN)
+## Token discipline
 
-When `checkProjectHealth` shows `ANALYSIS STATUS: required_*` and `AUTO_RUN: yes` → call **`runProjectAnalysis`** without asking the user. CLI: `python brain.py analyze auto`.
+- sessionContextPack once instead of redundant health + retrieve.
+- retrieveChain: top_k_per_scope ≤ 8, narrow query.
+- Do not dump full MCP payloads in chat.
 
-## Architecture (profile full)
+## Monorepo routing
 
-MCP **`ArchitectureCurator`**: `getArchitectureDoc`, `updateArchitectureSection` → `docs/ARCHITECTURE.generated.md`.
+Pass context_path on every tool (backend/src/…). Server auto-infers from paths in text if omitted.
 
-Canonical host-neutral protocol: `docs/AGENT_PROTOCOL.md`. Onboard: `python brain.py onboard`.
+Full protocol: `docs/AGENT_PROTOCOL.md`, `docs/AUTONOMOUS_KNOWLEDGE_GRAPH_PROTOCOL.md`. Onboard: `python brain.py onboard`.

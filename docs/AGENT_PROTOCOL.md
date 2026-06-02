@@ -18,13 +18,23 @@ For repo overview, stack, architecture, onboarding:
 - **QwenReviewer** (optional) — diff review.
 - **ArchitectureCurator** (optional, profile full) — `docs/ARCHITECTURE.generated.md`.
 
-## 3. Writes
+## 3. Writes (automated — not optional)
+
+**Chat and hooks do not replace MCP writes.** Hooks produce autolog; structured memory requires explicit tools.
+
+Every non-trivial session:
+
+1. Start: `checkProjectHealth` or `sessionContextPack`
+2. During: **`storeKnowledge`** after each architecture decision, bugfix, or API change (English, include file path)
+3. End: if nothing stored yet, one summary `storeKnowledge`
 
 English only via MCP tools:
 
 - `storeKnowledge` — facts (`tech`, `scenario`, optional `code_role`)
 - `registerDependency` — cross-repo links
 - `markIndexingComplete` — only this tool counts as indexed
+
+Cursor enforces this via project rules `autolinking-brain.mdc` + `mem0-auto-write.mdc` (`alwaysApply: true`) and skill `autolinking-brain-mcp`. Refresh: `python brain.py sync-agent --force-copy`.
 
 ## 4. Knowledge GC
 

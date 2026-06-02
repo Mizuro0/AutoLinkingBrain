@@ -1,0 +1,38 @@
+---
+description: >-
+  Mandatory Mem0 writes via storeKnowledge after decisions — agents must persist
+  knowledge to AutoLinkingBrain, not only chat or hooks.
+alwaysApply: true
+---
+
+# Mem0 auto-write (mandatory)
+
+When **AutoLinkingBrain** MCP is available, persist knowledge **in the same session** you learn it.
+
+## When to call storeKnowledge
+
+| Trigger | scenario | Example |
+|---------|----------|---------|
+| Chose architecture / pattern | architecture | "Auth uses JWT in middleware X" |
+| Fixed non-trivial bug | bugfix | root cause + fix location |
+| Changed or added API | api_contract | endpoint, DTO, breaking change |
+| Completed reindex slice | indexing | module map, entrypoints |
+| Learned project-specific gotcha | architecture | env, deploy, config trap |
+
+One fact per call. Include a **file path** in `text` or pass `context_path`.
+
+## Minimum per session
+
+- **Start:** `checkProjectHealth` (or `sessionContextPack` once).
+- **During:** ≥1 `storeKnowledge` if you made any decision or discovery worth recalling.
+- **End of task:** if nothing stored yet but work was done → one summary `storeKnowledge`.
+
+## MCP call pattern
+
+```
+server: user-AutoLinkingBrain
+tool: storeKnowledge
+{ text: "English fact with path src/foo.py ...", tech: "...", scenario: "architecture", scope: "project", context_path: "..." }
+```
+
+If MCP errors: note briefly, continue work — retry store on next stable turn.

@@ -5,7 +5,8 @@ Canonical templates installed by AutoLinkingBrain:
 | Source | Installed to | Visible in Cursor Settings |
 |--------|--------------|----------------------------|
 | `skills/autolinking-brain-mcp/SKILL.md` | `~/.cursor/skills/autolinking-brain-mcp/SKILL.md` | Skills (agent picks by description) |
-| `rules/autolinking-brain.mdc` | **`<workspace>/.cursor/rules/`** | **Rules → Project Rules** |
+| `rules/autolinking-brain.mdc` | **`<workspace>/.cursor/rules/`** | **Rules → Project Rules** (`alwaysApply: true`) |
+| `rules/mem0-auto-write.mdc` | **`<workspace>/.cursor/rules/`** | **Rules → Project Rules** (`alwaysApply: true`) |
 
 **Important:** `~/.cursor/rules/` is **not** read by Cursor Settings. Project rules must live in the **opened workspace** at `.cursor/rules/*.mdc`.
 
