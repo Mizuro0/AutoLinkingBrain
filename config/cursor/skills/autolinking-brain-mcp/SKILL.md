@@ -39,7 +39,7 @@ For overview, stack, architecture, “what is this project”, onboarding, high-
 
 1. **First tool call:** MCP **`checkProjectHealth`** with `{}` and the correct **`server`** (default **`user-AutoLinkingBrain`**).
 2. **Do not** use `read_file`, `list_dir`, `grep`, `glob_file_search`, `codebase_search` (or similar) **until** `checkProjectHealth` returns or errors.
-3. Summarize `STATUS`, `REINDEX_PROTOCOL`, **INCOMING DEPENDENCIES** for the user (user language per user rules; default concise).
+3. Summarize `STATUS`, `REINDEX_PROTOCOL`, **INDEXING COVERAGE**, **INCOMING DEPENDENCIES** for the user (user language per user rules; default concise).
 4. Then optionally **`sessionContextPack`** or **`retrieveChain`**, then local files as needed.
 
 `sessionStart` **additional_context** from Mem0 is **supplementary** — it does **not** replace `checkProjectHealth` for indexing / reindex / incoming links.
@@ -54,7 +54,19 @@ When health says full indexing is needed:
 2. Scan **outbound APIs** (HTTP clients, OpenAPI/Swagger, gRPC/proto, shared DTO packages).
 3. For each finding: **`registerDependency`** with `link_type` `module` or `api` and **English, factual** `reason`.
 4. Scan entrypoints and integration surfaces; **`storeKnowledge`** project summary (`scope` `project` or `both`), **English** body, accurate `tech` / `scenario`.
-5. **`markIndexingComplete(summary="…")`** with **English** summary (final mark for health).
+5. Re-check **`checkProjectHealth`** — **INDEXING COVERAGE** must show `COVERAGE_STATUS: sufficient` (or acceptable GAPS with user approval).
+6. **`markIndexingComplete(summary="…")`** with **English** summary (final mark for health). With `MEM0_INDEXING_STRICT=1` (default), the tool **rejects** if GAPS remain.
+
+### Coverage thresholds (env)
+
+| Env | Default |
+|-----|---------|
+| `MEM0_INDEXING_MIN_FACTS` | `8` |
+| `MEM0_INDEXING_REQUIRED_SCENARIOS` | `architecture,api_contract` |
+| `MEM0_INDEXING_MIN_OUTBOUND_DEPS` | `0` |
+| `MEM0_INDEXING_STRICT` | `1` |
+
+Countable facts exclude indexing mark, autolog, and topology `[LINK]` rows.
 
 Treat **incoming** real links as **contracts** — document public surfaces; avoid breaking changes without a migration plan.
 
@@ -122,3 +134,32 @@ Disable auto: `CODEGRAPH_AUTO_DISCOVER=0` or `--no-auto`.
 Use the **camelCase** tool names exposed by the server (e.g. `checkProjectHealth`, `storeKnowledge`). If Cursor allowlist blocks tools, align names with the server and user MCP config.
 
 Full protocol: `docs/AUTONOMOUS_KNOWLEDGE_GRAPH_PROTOCOL.md` in the AutoLinkingBrain repo.
+
+## Qwen code review (optional companion MCP)
+
+If **`QwenReviewer`** is configured in `~/.cursor/mcp.json` (installed via `python brain.py install`):
+
+| Intent | MCP |
+|---|---|
+| Review git diff / staged changes with Mem0 contracts + CodeGraph | **QwenReviewer** |
+
+Tools: `reviewDiff`, `reviewStaged`, `getReviewBudget`. Model: `OLLAMA_REVIEW_MODEL` (default `qwen2.5-coder:7b`, 32K context).
+Use after indexing is healthy; review output is Russian markdown findings — Cursor agent applies fixes.
+
+## Knowledge GC
+
+| Intent | MCP / CLI |
+|---|---|
+| Audit autolog/duplicates/stale | `auditKnowledge` or `python brain.py gc audit` |
+| Purge (dry-run default) | `purgeMemories` with `confirm_token` |
+| Exact duplicates | `listDuplicateMemories` / `brain.py gc dedupe-exact` |
+
+## Project analysis (AUTO_RUN)
+
+When `checkProjectHealth` shows `ANALYSIS STATUS: required_*` and `AUTO_RUN: yes` → call **`runProjectAnalysis`** without asking the user. CLI: `python brain.py analyze auto`.
+
+## Architecture (profile full)
+
+MCP **`ArchitectureCurator`**: `getArchitectureDoc`, `updateArchitectureSection` → `docs/ARCHITECTURE.generated.md`.
+
+Canonical host-neutral protocol: `docs/AGENT_PROTOCOL.md`. Onboard: `python brain.py onboard`.

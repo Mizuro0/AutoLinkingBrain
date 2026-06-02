@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Brain Fleet Hub</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 1.5rem; background: #0f1419; color: #e7ecf3; }
+    table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+    th, td { border: 1px solid #334; padding: 0.5rem 0.75rem; text-align: left; }
+    th { background: #1a2332; }
+    .muted { color: #8899aa; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <h1>Brain Fleet Hub</h1>
+  <p class="muted">Anonymous refs only — no code, paths, or memory text.</p>
+  <div id="stats"></div>
+  <table>
+    <thead>
+      <tr>
+        <th>ts</th>
+        <th>install_ref</th>
+        <th>device_ref</th>
+        <th>project_ref</th>
+        <th>events</th>
+        <th>analysis</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <script>
+    const token = new URLSearchParams(location.search).get('token') || '';
+    const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+    fetch('/api/fleet/snapshots?limit=100', { headers })
+      .then(r => r.json())
+      .then(data => {
+        const snaps = data.snapshots || [];
+        document.getElementById('stats').textContent = 'Snapshots: ' + snaps.length;
+        const tbody = document.getElementById('rows');
+        snaps.forEach(s => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${s.ts||''}</td><td>${s.install_ref||''}</td><td>${s.device_ref||''}</td><td>${s.project_ref||''}</td><td>${s.event_count||0}</td><td>${s.analysis_status||'-'}</td>`;
+          tbody.appendChild(tr);
+        });
+      })
+      .catch(e => { document.getElementById('stats').textContent = 'Load failed: ' + e; });
+  </script>
+</body>
+</html>

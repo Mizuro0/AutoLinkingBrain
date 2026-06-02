@@ -52,6 +52,9 @@ def test_merge_mcp_includes_telemetry(tmp_path: Path, monkeypatch: pytest.Monkey
     data = json.loads(mcp_path.read_text(encoding="utf-8"))
     entry = data["mcpServers"]["AutoLinkingBrain"]
     assert entry["env"]["MEM0_TELEMETRY"] == "false"
+    qwen = data["mcpServers"]["QwenReviewer"]
+    assert "qwen_review_server.py" in str(qwen.get("args", []))
+    assert qwen["env"]["OLLAMA_REVIEW_MODEL"] == "qwen2.5-coder:7b"
     hooks = json.loads(hooks_path.read_text(encoding="utf-8"))
     assert hooks["hooks"]["sessionStart"][0]["env"]["MEM0_TELEMETRY"] == "false"
     skill = tmp_path / ".cursor" / "skills" / "autolinking-brain-mcp" / "SKILL.md"
@@ -67,4 +70,4 @@ def test_register_tools_wires_all_domains() -> None:
     mcp = MagicMock()
     mctx = McpContext(db=MagicMock())
     register_tools(mcp, mctx)
-    assert mcp.tool.call_count == 9
+    assert mcp.tool.call_count == 13

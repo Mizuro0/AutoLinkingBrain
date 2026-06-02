@@ -34,6 +34,14 @@ def events_enabled() -> bool:
 def log_event(event: str, source: str, **fields: object) -> None:
     if not events_enabled():
         return
+    try:
+        from autolinkingbrain.brain_metrics_async import async_enabled, enqueue_event
+
+        if async_enabled():
+            enqueue_event(event, source, **fields)
+            return
+    except ImportError:
+        pass
     path = events_path()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -145,6 +153,25 @@ def aggregate_for_viewer(*, days: float = 7.0, recent_limit: int = 80) -> dict:
     report["recent"] = _recent_events(events, limit=recent_limit)
     report["hook_chart"] = _hook_chart_data(report.get("hook_status") or {})
     report["write_chart"] = _top_chart_data(report.get("write_by_source") or {}, limit=8)
+    proot = os.environ.get("VIEWER_PROJECT_ROOT", "").strip()
+    if proot:
+        try:
+            from autolinkingbrain.project_analysis import evaluate_analysis_status
+            from autolinkingbrain.project_index_state import ProjectIndexState
+            from mem0 import Memory
+            from autolinkingbrain.mem0_settings import mem0_vector_config
+            from autolinkingbrain.mem0_project_slug import resolve_project_slug
+
+            slug = resolve_project_slug(project_root=proot)
+            db = Memory.from_config(config_dict=mem0_vector_config())
+            st = evaluate_analysis_status(db, project_root=proot, project_slug=slug)
+            report["ops"] = {
+                "analysis": st.format_block(),
+                "project_index": str(ProjectIndexState(proot).md_path),
+            }
+        except Exception as exc:
+            report["ops"] = {"error": str(exc)}
+    report["metrics_tier"] = "local_viewer"
     return report
 
 

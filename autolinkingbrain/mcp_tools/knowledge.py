@@ -24,6 +24,7 @@ def register(mcp: FastMCP, mctx: McpContext) -> None:
         project_slug: str = "",
         project_root: str = "",
         context_path: str = "",
+        code_role: str = "",
         *,
         ctx: Context,
     ) -> str:
@@ -52,7 +53,8 @@ def register(mcp: FastMCP, mctx: McpContext) -> None:
         tmax = int(os.environ.get("MCP_STORE_KNOWLEDGE_BODY_MAX_CHARS", "5500"))
         if tmax > 0 and len(body) > tmax:
             body = body[: tmax - 28] + "\n… [body truncated for storage/token budget]"
-        enriched_text = f"[{tech.upper()}] [{scenario.upper()}] (Updated: {now}): {body}"
+        role_tag = f" [ROLE:{code_role.strip().upper()}]" if (code_role or "").strip() else ""
+        enriched_text = f"[{tech.upper()}] [{scenario.upper()}]{role_tag} (Updated: {now}): {body}"
 
         u_ids: list[str] = []
         if scope in ("project", "both"):
@@ -66,7 +68,7 @@ def register(mcp: FastMCP, mctx: McpContext) -> None:
                 u_id,
                 infer=mcp_store_infer_enabled(),
                 source="mcp:storeKnowledge",
-                source_detail=f"tech={tech} scenario={scenario} scope={scope}",
+                source_detail=f"tech={tech} scenario={scenario} scope={scope} code_role={code_role or '-'}",
             )
         log_mem0(
             "write",

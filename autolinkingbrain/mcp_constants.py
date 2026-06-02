@@ -20,6 +20,8 @@ Tool routing:
 3. "Where in code / who calls X / impact of change": CodeGraph (codegraph_search, codegraph_trace, codegraph_explore, codegraph_impact) — not blind file scans.
 4. Cross-repo public API changes: retrieveChain with linked_projects BEFORE editing; registerDependency when indexing outbound links.
 5. After full project scan: markIndexingComplete (FINAL_INDEXING_MARK); use storeKnowledge for facts (English body, tech/scenario metadata).
+6. ANALYSIS STATUS required + AUTO_RUN: runProjectAnalysis (auto/full/incremental) without asking the user.
+7. Knowledge cleanup: auditKnowledge dry-run → purgeMemories with confirm_token (or brain.py gc).
 
 Writes via storeKnowledge, registerDependency, markIndexingComplete: English only, one fact per entry when possible.
 

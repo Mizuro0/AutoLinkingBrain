@@ -1,0 +1,36 @@
+# Copy to ~/.config/autolinkingbrain/config.toml (or %APPDATA%/autolinkingbrain/config.toml)
+# Per-project override: {workspace}/.brain/config.toml
+
+[profile]
+name = "standard"          # minimal | standard | full
+
+[host]
+kind = "auto"              # auto | cursor | vscode | cli | ci
+
+[mcp]
+scope = "global"           # global | project
+project_root = ""          # for scope=project
+
+[chroma]
+path = ""                  # empty = <brain-repo>/chroma_data
+collection = "graph_brain"
+
+[ollama]
+enabled = true
+embed_model = "nomic-embed-text"
+llm_enrich = false
+review_model = "qwen2.5-coder:7b"   # empty = skip QwenReviewer
+
+[fleet]
+enabled = false
+url = ""
+token = ""
+push = false
+
+[metrics]
+async = true
+local_viewer = true
+
+[analysis]
+auto_run = true
+batch_size = 5

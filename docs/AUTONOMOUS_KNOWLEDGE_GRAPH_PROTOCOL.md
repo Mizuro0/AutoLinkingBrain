@@ -68,7 +68,39 @@ If **`checkProjectHealth`** fails or MCP is unavailable: state that clearly in *
   3. For each dependency found, call **`registerDependency(target_project="…", link_type="module" OR "api", reason="…")`** with **English, factual** reasons.
   4. Scan main entrypoints, configs, and integration surfaces relevant to this stack.
   5. Call **`storeKnowledge`** with a **project** summary (`scope="project"` or `both` as appropriate), with correct `tech` / `scenario` labels — **body in English**.
-  6. Finish with **`markIndexingComplete(summary="…")`** (**English** summary) so **`checkProjectHealth`** can see **`FINAL_INDEXING_MARK`**.
+  6. Ensure **INDEXING COVERAGE** is **sufficient** before marking complete (see below).
+  7. Finish with **`markIndexingComplete(summary="…")`** (**English** summary) so **`checkProjectHealth`** can see **`FINAL_INDEXING_MARK`**.
+
+**INDEXING COVERAGE** (shown in `checkProjectHealth`):
+
+```
+=== INDEXING COVERAGE ===
+FACTS: 12 (min 8)
+SCENARIOS: architecture, api_contract (required: architecture, api_contract)
+OUTBOUND DEPS: 6 (min 0)
+GAPS: (none)
+COVERAGE_STATUS: sufficient | insufficient
+```
+
+Env thresholds (defaults tuned for backend pilot):
+
+| Env | Default | Purpose |
+|-----|---------|---------|
+| `MEM0_INDEXING_MIN_FACTS` | `8` | Minimum countable facts in `project_<slug>` |
+| `MEM0_INDEXING_REQUIRED_SCENARIOS` | `architecture,api_contract` | Required `scenario` tags from `storeKnowledge` |
+| `MEM0_INDEXING_MIN_OUTBOUND_DEPS` | `0` | Minimum outbound `registerDependency` links |
+| `MEM0_INDEXING_STRICT` | `1` | When `1`, `markIndexingComplete` **rejects** if GAPS remain |
+
+Countable facts exclude `FINAL_INDEXING_MARK`, autolog rows (`[CURSOR]`, `[AUT_LOG]`), and topology `[LINK]` lines.
+`STATUS: OK` from the indexing mark is unchanged; **COVERAGE_STATUS** may still be `insufficient` if facts/scenarios are missing.
+
+**Reindex checklist:**
+
+1. `checkProjectHealth` — read **INDEXING COVERAGE** and **GAPS**.
+2. Add `storeKnowledge` for architecture, api_contract, entrypoints (English body).
+3. Add `registerDependency` for outbound module/API links.
+4. Re-check coverage; only then `markIndexingComplete`.
+5. With `MEM0_INDEXING_STRICT=0`, mark is allowed but response warns about GAPS.
 
 **Important:** only the **`markIndexingComplete`** MCP tool counts. Hook autolog or other memories that mention `FINAL_INDEXING_MARK` do **not** satisfy health checks.
 - Optionally, after a successful mark, call **`checkProjectHealth()`** once more if the user wants confirmation that reindex is no longer required.
@@ -104,3 +136,25 @@ When changing behavior consumed by another project (shared models, REST/gRPC con
 - For **`checkProjectHealth`**, rely on default caps; widen `max_response_chars` only when debugging.
 - Do not paste full tool outputs back into the chat verbatim unless necessary; summarize in Russian for the user, keep English in Mem0 writes only.
 - After protocol reindex, optionally call **`checkProjectHealth`** once; avoid repeated health calls in the same turn without new edits.
+
+## 7. Analysis orchestrator (AUTO_RUN)
+
+When **`checkProjectHealth`** shows **`ANALYSIS STATUS: required_full`** or **`required_incremental`** and **`AUTO_RUN: yes`**:
+
+1. Call **`runProjectAnalysis`** with `mode=auto` (repeat until batch `next=done` if needed).
+2. Do **not** ask the user “should I run full analysis?” — proceed unless they explicitly opted out.
+
+CLI fallback: `python brain.py analyze auto --project-root <root>`.
+
+State mirror: `{project}/.brain/project_index.db` and `.brain/PROJECT_INDEX.md`.
+
+## 8. Knowledge GC
+
+Before bulk cleanup:
+
+1. **`auditKnowledge`** (dry-run) — note **`CONFIRM_TOKEN`**.
+2. **`purgeMemories`** with token; keep **`dry_run=true`** first unless user confirmed delete.
+
+CLI: `python brain.py gc audit|purge|dedupe-exact`.
+
+See also: [AGENT_PROTOCOL.md](AGENT_PROTOCOL.md).

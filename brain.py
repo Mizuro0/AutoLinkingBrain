@@ -9,6 +9,10 @@ AutoLinkingBrain — one launcher, minimal commands.
   python brain.py install     venv + MCP + hooks (no PowerShell)
   python brain.py setup       idempotent bootstrap (start.bat uses this)
   python brain.py stats       metrics / ROI estimate (offline, no agent tokens)
+  python brain.py onboard     one-command setup (config + MCP + hooks)
+  python brain.py doctor      diagnostics
+  python brain.py gc audit    knowledge GC dry-run
+  python brain.py analyze auto  project analysis batch
 
 Double-click start.bat (Windows) or ./start.sh (Unix) — setup + viewer.
 """
@@ -210,64 +214,73 @@ def cmd_stats(args: argparse.Namespace) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="brain",
-        description="AutoLinkingBrain launcher — viewer, status, CodeGraph.",
+        description="AutoLinkingBrain launcher — viewer, status, CodeGraph, onboard, GC, analysis.",
     )
-    parser.add_argument(
-        "command",
-        nargs="?",
-        default="start",
-        choices=("start", "status", "codegraph", "install", "setup", "stats", "sync-agent"),
-        help="start=setup+viewer, setup=bootstrap, sync-agent=skill+rules to all repos, stats=metrics",
-    )
+    sub = parser.add_subparsers(dest="command")
 
-    p_stats = parser.add_argument_group("stats options (with command stats)")
-    p_stats.add_argument("--days", type=float, default=7.0, help="Lookback window in days (default 7)")
-    p_stats.add_argument("--json", action="store_true", help="JSON output for CI/scripts")
+    p_start = sub.add_parser("start", help="setup+viewer (default)")
+    p_start.add_argument("--no-browser", action="store_true")
+    p_start.add_argument("--skip-setup", action="store_true")
 
-    p_setup = parser.add_argument_group("setup options (with command setup)")
-    p_setup.add_argument("--no-codegraph", action="store_true", help="Skip codegraph MCP entry")
-    p_setup.add_argument("--no-pull-models", action="store_true", help="Skip ollama pull")
-    p_setup.add_argument("--no-codegraph-init", action="store_true", help="Skip codegraph init for missing indexes")
-    p_setup.add_argument("--force-pip", action="store_true", help="Re-run pip install")
+    sub.add_parser("status", help="Health check")
 
-    p_inst = parser.add_argument_group("install options (with command install)")
-    p_inst.add_argument("--skip-venv", action="store_true", help="Skip venv/pip")
-    p_inst.add_argument("--skip-mcp", action="store_true", help="Skip mcp.json merge")
-    p_inst.add_argument("--skip-hooks", action="store_true", help="Skip hooks.json merge")
-    p_inst.add_argument("--skip-ollama", action="store_true", help="Skip Ollama check")
-    p_inst.add_argument("--pull-models", action="store_true", help="ollama pull llama3.2 + nomic-embed-text")
-    p_inst.add_argument("--with-codegraph", action="store_true", help="Add codegraph MCP entry if on PATH")
+    p_cg = sub.add_parser("codegraph", help="CodeGraph index")
+    p_cg.add_argument("--list", action="store_true")
+    p_cg.add_argument("--status", dest="status_only", action="store_true")
+    p_cg.add_argument("--force", action="store_true")
+    p_cg.add_argument("--workspace", default="")
+    p_cg.add_argument("--no-auto", action="store_true")
+    p_cg.add_argument("--quiet", action="store_true")
+    p_cg.add_argument("paths", nargs="*")
 
-    p_sync = parser.add_argument_group("sync-agent options (with command sync-agent)")
-    p_sync.add_argument("--force-copy", action="store_true", help="Overwrite skill/rules even when up to date")
+    p_inst = sub.add_parser("install", help="venv + MCP + hooks")
+    p_inst.add_argument("--skip-venv", action="store_true")
+    p_inst.add_argument("--skip-mcp", action="store_true")
+    p_inst.add_argument("--skip-hooks", action="store_true")
+    p_inst.add_argument("--skip-ollama", action="store_true")
+    p_inst.add_argument("--pull-models", action="store_true")
+    p_inst.add_argument("--with-codegraph", action="store_true")
 
-    p_cg = parser.add_argument_group("codegraph options (with command codegraph)")
-    p_cg.add_argument("--list", action="store_true", help="List discovered repos only")
-    p_cg.add_argument("--status", dest="status_only", action="store_true", help="CodeGraph status per repo")
-    p_cg.add_argument("--force", action="store_true", help="Re-index even if .codegraph exists")
-    p_cg.add_argument("--workspace", default="", help="Monorepo root (or CODEGRAPH_WORKSPACE env)")
-    p_cg.add_argument("--no-auto", action="store_true", help="Disable auto-discovery")
-    p_cg.add_argument("--quiet", action="store_true", help="Less output")
-    p_cg.add_argument("paths", nargs="*", help="Extra repo paths")
+    p_setup = sub.add_parser("setup", help="Idempotent bootstrap")
+    p_setup.add_argument("--no-codegraph", action="store_true")
+    p_setup.add_argument("--no-pull-models", action="store_true")
+    p_setup.add_argument("--no-codegraph-init", action="store_true")
+    p_setup.add_argument("--force-pip", action="store_true")
 
-    parser.add_argument("--no-browser", action="store_true", help="With start: do not open browser")
-    parser.add_argument("--skip-setup", action="store_true", help="With start: skip bootstrap, viewer only")
+    p_stats = sub.add_parser("stats", help="Metrics / ROI")
+    p_stats.add_argument("--days", type=float, default=7.0)
+    p_stats.add_argument("--json", action="store_true")
+
+    p_sync = sub.add_parser("sync-agent", help="Sync skill + rules")
+    p_sync.add_argument("--force-copy", action="store_true")
+
+    sys.path.insert(0, str(ROOT))
+    from autolinkingbrain.brain_cli import add_cli_parsers
+
+    add_cli_parsers(sub)
 
     args = parser.parse_args()
+    cmd = args.command
+    if not cmd:
+        ns = argparse.Namespace(no_browser=False, skip_setup=False)
+        return cmd_viewer_with_setup(ns)
 
-    if args.command == "start":
+    if hasattr(args, "handler"):
+        return args.handler(args)
+
+    if cmd == "start":
         return cmd_viewer_with_setup(args)
-    if args.command == "status":
+    if cmd == "status":
         return cmd_status(args)
-    if args.command == "codegraph":
+    if cmd == "codegraph":
         return cmd_codegraph(args)
-    if args.command == "install":
+    if cmd == "install":
         return cmd_install(args)
-    if args.command == "setup":
+    if cmd == "setup":
         return cmd_setup(args)
-    if args.command == "sync-agent":
+    if cmd == "sync-agent":
         return cmd_sync_agent(args)
-    if args.command == "stats":
+    if cmd == "stats":
         return cmd_stats(args)
     return 1
 

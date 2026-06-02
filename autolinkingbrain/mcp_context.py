@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from mcp.server.fastmcp.server import Context
 from mem0 import Memory
 
+from autolinkingbrain.indexing_coverage import analyze_indexing_coverage, load_topology_memory_texts
 from autolinkingbrain.mcp_constants import (
     GLOBAL_ID,
     INDEXING_MARK_TOKEN,
@@ -206,10 +207,38 @@ class McpContext:
         links = "\n".join([f"• {m.get('memory', '')}" for m in slice_rows]) if slice_rows else "No incoming links."
         if len(incoming_rows) > max_links:
             links += f"\n… and {len(incoming_rows) - max_links} more (raise MCP_HEALTH_MAX_INCOMING or use retrieveChain)."
+        try:
+            raw = self.db.get_all(filters={"user_id": project_user_id}, top_k=1000)
+            project_texts = [
+                str(r.get("memory") or "")
+                for r in self.rows_sorted_by_time(raw)
+            ]
+        except Exception:
+            project_texts = []
+        topology_texts = load_topology_memory_texts(self.db)
+        coverage = analyze_indexing_coverage(project_texts, topology_texts, project_id)
+        analysis_block = self._analysis_status_block(project_id, project_root=os.getcwd())
         return (
             f"=== HEALTH STATUS ===\n{health_lines}\n\n"
+            f"=== INDEXING COVERAGE ===\n{coverage.format_block()}\n\n"
+            f"=== ANALYSIS STATUS ===\n{analysis_block}\n\n"
             f"=== INCOMING DEPENDENCIES ===\n{links}"
         )
+
+    def _analysis_status_block(self, project_id: str, *, project_root: str) -> str:
+        try:
+            from autolinkingbrain.project_analysis import evaluate_analysis_status
+
+            auto = os.environ.get("MEM0_ANALYSIS_AUTO_RUN", "1").strip().lower() not in ("0", "false")
+            st = evaluate_analysis_status(
+                self.db,
+                project_root=project_root,
+                project_slug=project_id,
+                auto_run=auto,
+            )
+            return st.format_block()
+        except Exception:
+            return "STATUS: unknown\nREASON: analysis module unavailable\nAUTO_RUN: no"
 
     def retrieve_chain_body(
         self,

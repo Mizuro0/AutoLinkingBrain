@@ -14,6 +14,14 @@ from pathlib import Path
 from autolinkingbrain.cursor_agent import sync_cursor_agent_assets
 from autolinkingbrain.paths import REPO_ROOT as ROOT
 
+try:
+    from autolinkingbrain.agent_hosts import resolve_host
+    from autolinkingbrain.brain_config import BrainConfig, load_config
+except ImportError:
+    resolve_host = None  # type: ignore
+    load_config = None  # type: ignore
+    BrainConfig = None  # type: ignore
+
 
 def _mem0_env() -> dict[str, str]:
     """Env vars merged into MCP server and hook subprocesses."""
@@ -88,7 +96,7 @@ def _pull_ollama_models(*, only_missing: bool = True) -> None:
     if not shutil.which("ollama"):
         print("  ! ollama not in PATH")
         return
-    for model in ("llama3.2", "nomic-embed-text"):
+    for model in ("llama3.2", "nomic-embed-text", "qwen2.5-coder:7b"):
         if only_missing and _ollama_has_model(model):
             print(f"  OK: {model}")
             continue
@@ -126,10 +134,29 @@ def _mcp_configured(py: Path, *, with_codegraph: bool) -> bool:
     args = entry.get("args") or []
     if not any("brain_server.py" in str(a) for a in args):
         return False
+    qwen = servers.get("QwenReviewer")
+    if not isinstance(qwen, dict):
+        return False
+    if str(qwen.get("command", "")) != str(py):
+        return False
+    qargs = qwen.get("args") or []
+    if not any("qwen_review_server.py" in str(a) for a in qargs):
+        return False
     if with_codegraph and shutil.which("codegraph"):
         cg = servers.get("codegraph")
         if not isinstance(cg, dict) or cg.get("command") != "codegraph":
             return False
+    return True
+
+
+def ensure_mcp_servers(*, with_codegraph: bool = False) -> bool:
+    """Merge ~/.cursor/mcp.json when AutoLinkingBrain or QwenReviewer entries are missing/stale."""
+    py = _venv_python()
+    if not py.is_file():
+        return False
+    if _mcp_configured(py, with_codegraph=with_codegraph):
+        return False
+    _merge_mcp(py, with_codegraph=with_codegraph)
     return True
 
 
@@ -184,8 +211,8 @@ def _merge_hooks(py: Path) -> Path:
                 "MEM0_AUTOLOG": "1",
                 "MEM0_AUTOLOG_STRICT": "1",
                 "MEM0_AUTOLOG_MIN_CHARS": "400",
-                "MEM0_AUTOLOG_USE_OLLAMA": "1",
-                "MEM0_AUTOLOG_OLLAMA_FALLBACK": "1",
+                "MEM0_AUTOLOG_USE_OLLAMA": "0",
+                "MEM0_AUTOLOG_OLLAMA_FALLBACK": "0",
                 "MEM0_AUTOLOG_TARGET": "project",
             },
         }
@@ -202,24 +229,187 @@ def _merge_hooks(py: Path) -> Path:
     return path
 
 
-def _merge_mcp(py: Path, *, with_codegraph: bool) -> Path:
-    path = Path.home() / ".cursor" / "mcp.json"
+def build_mcp_servers(
+    py: Path,
+    *,
+    profile: str = "standard",
+    with_codegraph: bool = False,
+) -> dict:
+    """Build MCP server entries for given install profile."""
+    servers: dict = {
+        "AutoLinkingBrain": {
+            "command": str(py),
+            "args": [str(ROOT / "brain_server.py")],
+            "cwd": "${workspaceFolder}",
+            "env": _mem0_env(),
+        },
+    }
+    prof = (profile or "standard").strip().lower()
+    if prof in ("standard", "full"):
+        servers["QwenReviewer"] = {
+            "command": str(py),
+            "args": [str(ROOT / "qwen_review_server.py")],
+            "cwd": "${workspaceFolder}",
+            "env": {**_mem0_env(), "OLLAMA_REVIEW_MODEL": "qwen2.5-coder:7b"},
+        }
+    if prof == "full":
+        servers["ArchitectureCurator"] = {
+            "command": str(py),
+            "args": [str(ROOT / "architecture_curator_server.py")],
+            "cwd": "${workspaceFolder}",
+            "env": _mem0_env(),
+        }
+    if with_codegraph and shutil.which("codegraph"):
+        servers["codegraph"] = {"command": "codegraph", "args": ["serve", "--mcp"]}
+    return servers
+
+
+def _mcp_json_for_scope(scope: str, project_root: str | None, host_kind: str = "cursor") -> Path:
+    if resolve_host is None:
+        return Path.home() / ".cursor" / "mcp.json"
+    host = resolve_host(host_kind)
+    proot = Path(project_root).resolve() if project_root else None
+    return host.mcp_json_path(scope=scope, project_root=proot)
+
+
+def _merge_mcp_to_path(
+    path: Path,
+    py: Path,
+    *,
+    profile: str = "standard",
+    with_codegraph: bool = False,
+    our_keys: tuple[str, ...] = ("AutoLinkingBrain", "QwenReviewer", "ArchitectureCurator", "codegraph"),
+) -> Path:
     _backup(path)
     data = _read_json(path)
     servers = data.get("mcpServers") if isinstance(data.get("mcpServers"), dict) else {}
-    servers["AutoLinkingBrain"] = {
-        "command": str(py),
-        "args": [str(ROOT / "brain_server.py")],
-        "cwd": "${workspaceFolder}",
-        "env": _mem0_env(),
-    }
-    if with_codegraph and shutil.which("codegraph"):
-        servers["codegraph"] = {"command": "codegraph", "args": ["serve", "--mcp"]}
-        print("  + codegraph MCP entry")
-    elif with_codegraph:
-        print("  ! codegraph not on PATH — skipped")
+    for key in our_keys:
+        servers.pop(key, None)
+    servers.update(build_mcp_servers(py, profile=profile, with_codegraph=with_codegraph))
     _write_json(path, {"mcpServers": servers})
     return path
+
+
+def _merge_mcp(py: Path, *, with_codegraph: bool, profile: str = "standard") -> Path:
+    path = Path.home() / ".cursor" / "mcp.json"
+    return _merge_mcp_to_path(path, py, profile=profile, with_codegraph=with_codegraph)
+
+
+def mcp_status(*, scope: str = "global", project_root: str = "", host: str = "cursor") -> dict:
+    path = _mcp_json_for_scope(scope, project_root or None, host)
+    data = _read_json(path)
+    servers = data.get("mcpServers") if isinstance(data.get("mcpServers"), dict) else {}
+    py = _venv_python()
+    return {
+        "scope": scope,
+        "path": str(path),
+        "exists": path.is_file(),
+        "servers": sorted(servers.keys()),
+        "brain_configured": "AutoLinkingBrain" in servers,
+        "venv_python": str(py),
+        "venv_ok": py.is_file(),
+    }
+
+
+def mcp_install(*, scope: str = "global", project_root: str = "", profile: str = "standard", host: str = "cursor") -> int:
+    py = _ensure_venv()
+    _pip_install(py)
+    path = _mcp_json_for_scope(scope, project_root or None, host)
+    _merge_mcp_to_path(path, py, profile=profile, with_codegraph=bool(shutil.which("codegraph")))
+    print(f"MCP installed: {path} profile={profile}")
+    return 0
+
+
+def mcp_uninstall(*, scope: str = "global", project_root: str = "", host: str = "cursor") -> int:
+    path = _mcp_json_for_scope(scope, project_root or None, host)
+    if not path.is_file():
+        print(f"No MCP config at {path}")
+        return 0
+    _backup(path)
+    data = _read_json(path)
+    servers = data.get("mcpServers") if isinstance(data.get("mcpServers"), dict) else {}
+    for key in ("AutoLinkingBrain", "QwenReviewer", "ArchitectureCurator"):
+        servers.pop(key, None)
+    _write_json(path, {"mcpServers": servers})
+    print(f"Removed Brain MCP entries from {path}")
+    return 0
+
+
+def run_onboard(
+    *,
+    host: str = "cursor",
+    mcp_scope: str = "global",
+    project_root: str = "",
+    profile: str = "standard",
+    pull_models: bool = True,
+    with_codegraph: bool = True,
+) -> int:
+    print(f"AutoLinkingBrain onboard\nRepo: {ROOT}")
+    py = _ensure_venv()
+    _pip_install(py)
+    if load_config:
+        load_config(project_root=project_root or None)
+    mcp_install(scope=mcp_scope, project_root=project_root, profile=profile, host=host)
+    if host in ("cursor", "auto"):
+        if not _hooks_configured(py):
+            p = _merge_hooks(py)
+            print(f"  hooks -> {p}")
+        sync_cursor_agent_assets(ROOT, all_discovered_repos=True)
+        agents_tpl = ROOT / "config" / "templates" / "AGENTS.md"
+        if agents_tpl.is_file() and project_root:
+            dest = Path(project_root) / "AGENTS.md"
+            if not dest.is_file():
+                shutil.copy2(agents_tpl, dest)
+                print(f"  AGENTS.md -> {dest}")
+    if _ollama_ok() and pull_models:
+        _pull_ollama_models(only_missing=True)
+    print("\nOnboard complete. Run: python brain.py doctor")
+    return 0
+
+
+def run_doctor(*, project_root: str = "", as_json: bool = False) -> dict:
+    checks: list[dict] = []
+    py = _venv_python()
+    checks.append({
+        "name": "venv",
+        "status": "ok" if py.is_file() else "fail",
+        "detail": str(py),
+    })
+    chroma = Path(os.environ.get("MEM0_CHROMA_PATH", str(ROOT / "chroma_data")))
+    checks.append({
+        "name": "chroma",
+        "status": "ok" if chroma.is_dir() or chroma.parent.is_dir() else "warn",
+        "detail": str(chroma),
+    })
+    checks.append({
+        "name": "ollama",
+        "status": "ok" if _ollama_ok() else "warn",
+        "detail": "127.0.0.1:11434",
+    })
+    g_st = mcp_status(scope="global")
+    checks.append({
+        "name": "mcp_global",
+        "status": "ok" if g_st["brain_configured"] else "fail",
+        "detail": g_st["path"],
+    })
+    if project_root:
+        p_st = mcp_status(scope="project", project_root=project_root)
+        if p_st["exists"] and p_st["brain_configured"]:
+            checks.append({"name": "mcp_project", "status": "warn", "detail": "duplicate global+project"})
+    if g_st["brain_configured"] and g_st["venv_ok"]:
+        prof = "standard"
+        if load_config:
+            prof = load_config(project_root=project_root or None).profile
+        if prof == "full":
+            data = _read_json(Path(g_st["path"]))
+            srv = (data.get("mcpServers") or {})
+            if "ArchitectureCurator" not in srv:
+                checks.append({"name": "arch_curator", "status": "warn", "detail": "profile full but Arch MCP missing"})
+    hooks_ok = _hooks_configured(py) if py.is_file() else False
+    checks.append({"name": "hooks", "status": "ok" if hooks_ok else "warn", "detail": str(Path.home() / ".cursor" / "hooks.json")})
+    fails = [c for c in checks if c["status"] == "fail"]
+    overall = "fail" if fails else "ok"
+    return {"overall": overall, "checks": checks}
 
 
 def merge_cursor_config(
