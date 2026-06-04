@@ -90,6 +90,7 @@ def register(mcp: FastMCP, mctx: McpContext) -> None:
         max_response_chars: int = 12000,
         per_memory_chars: int = 900,
         similarity_threshold: float = 0.15,
+        facts_only: bool = True,
         project_slug: str = "",
         project_root: str = "",
         context_path: str = "",
@@ -103,6 +104,7 @@ def register(mcp: FastMCP, mctx: McpContext) -> None:
         max_response_chars / per_memory_chars: ограничение длины ответа и одной записи.
         similarity_threshold: порог Mem0 vector search (BM25 в hybrid не использует порог).
         Hybrid BM25+vector (RRF) включён по умолчанию (MCP_HYBRID_SEARCH=1) — точнее для keyword + semantic.
+        facts_only: по умолчанию true — исключает autolog [CURSOR]/[AUT_LOG]; только storeKnowledge-факты.
         """
         await mctx.refresh_project_slug_from_mcp_roots(ctx)
         project_id, _used_ctx = mctx.resolve_project(
@@ -119,6 +121,7 @@ def register(mcp: FastMCP, mctx: McpContext) -> None:
             top_k_per_scope=top_k_per_scope,
             per_memory_chars=per_memory_chars,
             threshold=similarity_threshold,
+            facts_only=facts_only,
         )
         cap = int(os.environ.get("MCP_RETRIEVE_MAX_RESPONSE_CHARS", str(max_response_chars)))
         return mctx.truncate_block(text, max(4000, cap))

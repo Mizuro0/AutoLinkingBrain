@@ -14,8 +14,14 @@ _OUTBOUND_LINK_RE = re.compile(
     r"\[LINK\]\s*\[([^\]]+)\]\s+depends on\s+\[([^\]]+)\]",
     re.IGNORECASE,
 )
+_INBOUND_LINK_RE = re.compile(
+    r"^\[LINK\]\s*\[[^\]]+\]\s+depends on\s+\[([^\]]+)\]",
+    re.IGNORECASE,
+)
 
 _AUTOLOG_MARKERS = ("[CURSOR]", "[AUT_LOG", "AUT_LOG_LLAMA")
+_INDEXED_SOURCE_MARKER = "Indexed source `"
+_INDEXED_GENERIC_MARKER = "indexed for project analysis"
 
 
 def _env_int(key: str, default: int) -> int:
@@ -48,19 +54,82 @@ def indexing_strict() -> bool:
     return os.environ.get("MEM0_INDEXING_STRICT", "1").strip().lower() in ("1", "true", "yes")
 
 
+def is_autolog_memory(memory_text: str) -> bool:
+    """True for Cursor hook autolog rows (not curated storeKnowledge facts)."""
+    body = (memory_text or "").strip()
+    if not body:
+        return False
+    head = body[:120]
+    return any(m in head for m in _AUTOLOG_MARKERS)
+
+
+def is_indexing_batch_log(memory_text: str) -> bool:
+    """Per-file runProjectAnalysis noise — not curated knowledge for agents."""
+    body = (memory_text or "").strip()
+    if not body:
+        return False
+    if _INDEXED_SOURCE_MARKER in body:
+        return True
+    return _INDEXED_GENERIC_MARKER in body.lower()
+
+
 def is_countable_fact(memory_text: str) -> bool:
     """True if memory row counts toward indexing fact coverage."""
     body = (memory_text or "").strip()
     if not body or INDEXING_MARK_TOKEN in body:
         return False
-    head = body[:120]
-    if any(m in head for m in _AUTOLOG_MARKERS):
+    if is_indexing_batch_log(body):
+        return False
+    if is_autolog_memory(body):
         return False
     if body.startswith("[LINK]"):
         return False
     if body.startswith("[SOURCE:") and INDEXING_MARK_TOKEN in body:
         return False
     return True
+
+
+def is_retrievable_fact(memory_text: str) -> bool:
+    """True if retrieveChain/sessionContextPack should return this row (excludes autolog noise)."""
+    return is_countable_fact(memory_text)
+
+
+def incoming_target_slug(memory_text: str) -> str | None:
+    """Extract dependency target slug from a [LINK] row, or None."""
+    body = (memory_text or "").strip()
+    m = _INBOUND_LINK_RE.match(body)
+    if not m:
+        return None
+    return m.group(1).strip()
+
+
+def filter_incoming_dependencies(
+    memory_texts: list[str],
+    project_slug: str,
+) -> list[str]:
+    """Exact match: [LINK] … depends on [project_slug] (case-insensitive slug)."""
+    want = (project_slug or "").strip().lower()
+    if not want:
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for text in memory_texts:
+        body = (text or "").strip()
+        if not body.startswith("[LINK]"):
+            continue
+        target = incoming_target_slug(body)
+        if target is None or target.lower() != want:
+            continue
+        key = body[:200]
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(body)
+    return out
+
+
+def retrieve_facts_only_enabled() -> bool:
+    return os.environ.get("MCP_RETRIEVE_FACTS_ONLY", "1").strip().lower() not in ("0", "false", "no")
 
 
 def parse_scenario_tags(memory_text: str) -> set[str]:
@@ -173,22 +242,14 @@ def analyze_indexing_coverage(
 
 
 def load_project_memory_texts(db, project_user_id: str, *, top_k: int = 1000) -> list[str]:
-    try:
-        raw = db.get_all(filters={"user_id": project_user_id}, top_k=top_k)
-    except Exception:
-        return []
-    rows = raw.get("results", []) if isinstance(raw, dict) else raw or []
-    if not isinstance(rows, list):
-        return []
-    return [str(r.get("memory") or "") for r in rows if isinstance(r, dict)]
+    from autolinkingbrain.mem0_fetch import fetch_channel_rows
+
+    rows = fetch_channel_rows(project_user_id, top_k=top_k, db=db)
+    return [str(r.get("memory") or "") for r in rows]
 
 
 def load_topology_memory_texts(db, *, top_k: int = 2000) -> list[str]:
-    try:
-        raw = db.get_all(filters={"user_id": TOPOLOGY_ID}, top_k=top_k)
-    except Exception:
-        return []
-    rows = raw.get("results", []) if isinstance(raw, dict) else raw or []
-    if not isinstance(rows, list):
-        return []
-    return [str(r.get("memory") or "") for r in rows if isinstance(r, dict)]
+    from autolinkingbrain.mem0_fetch import fetch_channel_rows
+
+    rows = fetch_channel_rows(TOPOLOGY_ID, top_k=top_k, db=db)
+    return [str(r.get("memory") or "") for r in rows]

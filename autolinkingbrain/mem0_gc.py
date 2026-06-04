@@ -6,11 +6,12 @@ import hashlib
 import os
 import re
 import secrets
+import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-from autolinkingbrain.indexing_coverage import is_countable_fact
+from autolinkingbrain.indexing_coverage import is_countable_fact, is_indexing_batch_log
 from autolinkingbrain.mem0_lifecycle import is_stale_memory, stale_days_default
 from autolinkingbrain.mcp_constants import GLOBAL_ID, INDEXING_MARK_TOKEN, TOPOLOGY_ID
 
@@ -19,6 +20,7 @@ _TRIVIAL_MAX = int(os.environ.get("MEM0_GC_TRIVIAL_MAX_CHARS", "40"))
 
 CATEGORIES = (
     "autolog",
+    "indexing_log",
     "stale",
     "duplicate_exact",
     "duplicate_near",
@@ -117,6 +119,8 @@ def classify_row(row: MemoryRow, *, expected_user_id: str, stale_days: int | Non
     head = body[:140]
     if any(m in head for m in _AUTOLOG_MARKERS):
         return "autolog"
+    if is_indexing_batch_log(body):
+        return "indexing_log"
     if row.user_id != expected_user_id and row.user_id not in (GLOBAL_ID, TOPOLOGY_ID):
         return "wrong_channel"
     if row.user_id == TOPOLOGY_ID and expected_user_id != TOPOLOGY_ID:
@@ -142,6 +146,17 @@ def fetch_all_rows(
     max_pages: int = 50,
 ) -> list[dict]:
     """Paginated get_all — Mem0 may cap rows per call."""
+    from autolinkingbrain.mem0_fetch import _fetch_use_sqlite, fetch_channel_rows
+
+    if _fetch_use_sqlite():
+        cap = max(1, min(page_size * max_pages, 10000))
+        rows = fetch_channel_rows(user_id, top_k=cap, db=db)
+        return [
+            {**r, "user_id": user_id}
+            for r in rows
+            if isinstance(r, dict) and r.get("id")
+        ]
+
     all_rows: list[dict] = []
     for page in range(max_pages):
         top_k = page_size * (page + 1)
@@ -223,12 +238,327 @@ def purge_candidates(
         return PurgeResult(dry_run=True, deleted=0, skipped=len(ids))
     deleted = 0
     errors: list[str] = []
+    from autolinkingbrain.mem0_fetch import _fetch_use_sqlite, delete_memory_sqlite
+
     for mid in ids:
         try:
             if delete_fn:
                 delete_fn(mid)
-            else:
+            elif _fetch_use_sqlite():
+                delete_memory_sqlite(mid)
+            elif db is not None:
                 db.delete(mid)
+            else:
+                raise RuntimeError("no delete backend (set MEM0_FETCH_SQLITE=1 or pass db)")
+            deleted += 1
+        except Exception as exc:
+            errors.append(f"{mid}: {exc}")
+    return PurgeResult(dry_run=False, deleted=deleted, skipped=len(ids) - deleted, errors=errors)
+
+
+def _purge_log(msg: str, log: Callable[[str], None] | None) -> None:
+    if log:
+        log(msg)
+
+
+def _purge_indexing_logs_sqlite(
+    *,
+    user_id: str | None = None,
+    dry_run: bool = True,
+    max_delete: int = 5000,
+    log: Callable[[str], None] | None = None,
+) -> PurgeResult:
+    """Direct SQLite purge when chromadb Python client crashes (common on Windows)."""
+    from autolinkingbrain.mem0_settings import chroma_path_resolved
+
+    want_uid = (user_id or "").strip() or None
+    db_path = chroma_path_resolved() / "chroma.sqlite3"
+    if not db_path.is_file():
+        return PurgeResult(dry_run=dry_run, errors=[f"missing {db_path}"])
+
+    _purge_log(f"purge-indexing: sqlite {db_path}", log)
+    conn = sqlite3.connect(str(db_path), timeout=120)
+    try:
+        if want_uid:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT d.id
+                FROM embedding_metadata d
+                INNER JOIN embedding_metadata u ON u.id = d.id AND u.key = 'user_id'
+                WHERE d.key = 'data'
+                  AND d.string_value LIKE '%Indexed source%'
+                  AND u.string_value = ?
+                """,
+                (want_uid,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT d.id
+                FROM embedding_metadata d
+                INNER JOIN embedding_metadata u ON u.id = d.id AND u.key = 'user_id'
+                WHERE d.key = 'data'
+                  AND d.string_value LIKE '%Indexed source%'
+                  AND u.string_value LIKE 'project_%'
+                """
+            ).fetchall()
+        ids = [str(r[0]) for r in rows[:max_delete]]
+        _purge_log(f"purge-indexing: matched {len(ids)} indexing_log rows", log)
+        if dry_run:
+            return PurgeResult(dry_run=True, deleted=0, skipped=len(ids))
+
+        deleted = 0
+        errors: list[str] = []
+        for eid in ids:
+            try:
+                conn.execute("DELETE FROM embedding_metadata WHERE id = ?", (eid,))
+                conn.execute("DELETE FROM embedding_metadata_array WHERE id = ?", (eid,))
+                conn.execute("DELETE FROM embeddings WHERE id = ?", (eid,))
+                deleted += 1
+                if deleted % 200 == 0:
+                    conn.commit()
+                    _purge_log(f"purge-indexing: deleted {deleted}/{len(ids)}", log)
+            except Exception as exc:
+                errors.append(f"{eid}: {exc}")
+        conn.commit()
+        return PurgeResult(
+            dry_run=False,
+            deleted=deleted,
+            skipped=len(ids) - deleted,
+            errors=errors,
+        )
+    finally:
+        conn.close()
+
+
+def purge_indexing_logs_chroma(
+    *,
+    user_id: str | None = None,
+    dry_run: bool = True,
+    max_delete: int = 5000,
+    log: Callable[[str], None] | None = None,
+) -> PurgeResult:
+    """Scan Chroma directly and delete Indexed source rows (stable on Windows vs mem0 loop)."""
+    import chromadb
+    from chromadb.config import Settings
+
+    from autolinkingbrain.mem0_settings import CHROMA_COLLECTION, chroma_path_resolved
+
+    want_uid = (user_id or "").strip() or None
+    if os.environ.get("MEM0_PURGE_INDEXING_SQLITE", "1").strip().lower() not in ("0", "false", "no"):
+        return _purge_indexing_logs_sqlite(
+            user_id=want_uid,
+            dry_run=dry_run,
+            max_delete=max_delete,
+            log=log,
+        )
+
+    _purge_log(f"purge-indexing: opening Chroma at {chroma_path_resolved()}", log)
+    try:
+        client = chromadb.PersistentClient(
+            path=str(chroma_path_resolved()),
+            settings=Settings(anonymized_telemetry=False),
+        )
+        col = client.get_collection(CHROMA_COLLECTION)
+    except Exception as exc:
+        return PurgeResult(dry_run=dry_run, errors=[f"chroma_open: {exc}"])
+
+    ids: list[str] = []
+    offset = 0
+    batch_size = 500
+    scanned = 0
+    while len(ids) < max_delete:
+        try:
+            batch = col.get(
+                include=["documents", "metadatas"],
+                limit=batch_size,
+                offset=offset,
+            )
+        except Exception as exc:
+            return PurgeResult(
+                dry_run=dry_run,
+                deleted=0,
+                skipped=len(ids),
+                errors=[f"chroma_get offset={offset}: {exc}"],
+            )
+        doc_ids = batch.get("ids") or []
+        docs = batch.get("documents") or []
+        metas = batch.get("metadatas") or []
+        if not doc_ids:
+            break
+        scanned += len(doc_ids)
+        if scanned % 2000 == 0 or len(doc_ids) < batch_size:
+            _purge_log(f"purge-indexing: scanned {scanned} rows, matched {len(ids)}", log)
+        for i, doc_id in enumerate(doc_ids):
+            meta = metas[i] if i < len(metas) else {}
+            uid = (meta or {}).get("user_id") if isinstance(meta, dict) else ""
+            if want_uid and uid != want_uid:
+                continue
+            if not want_uid and not (isinstance(uid, str) and uid.startswith("project_")):
+                continue
+            text = docs[i] if i < len(docs) else ""
+            if is_indexing_batch_log(str(text or "")):
+                ids.append(str(doc_id))
+                if len(ids) >= max_delete:
+                    break
+        if len(doc_ids) < batch_size:
+            break
+        offset += batch_size
+
+    _purge_log(f"purge-indexing: found {len(ids)} indexing_log rows (cap {max_delete})", log)
+    if dry_run:
+        return PurgeResult(dry_run=True, deleted=0, skipped=len(ids))
+
+    deleted = 0
+    errors: list[str] = []
+    chunk = 50
+    for start in range(0, len(ids), chunk):
+        part = ids[start : start + chunk]
+        try:
+            col.delete(ids=part)
+            deleted += len(part)
+            _purge_log(f"purge-indexing: deleted {deleted}/{len(ids)}", log)
+        except Exception as exc:
+            for mid in part:
+                errors.append(f"{mid}: {exc}")
+    return PurgeResult(dry_run=False, deleted=deleted, skipped=len(ids) - deleted, errors=errors)
+
+
+def _purge_indexing_use_subprocess() -> bool:
+    v = os.environ.get("MEM0_PURGE_INDEXING_SUBPROCESS", "").strip().lower()
+    if v in ("0", "false", "no"):
+        return False
+    if v in ("1", "true", "yes"):
+        return True
+    import sys
+
+    return sys.platform == "win32"
+
+
+def purge_indexing_logs_subprocess(
+    *,
+    user_id: str | None = None,
+    dry_run: bool = True,
+    max_delete: int = 5000,
+    log: Callable[[str], None] | None = None,
+) -> PurgeResult:
+    """Run SQLite purge in a child process so an open Mem0/Chroma client in MCP cannot crash."""
+    import json
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    script = Path(__file__).resolve().parents[1] / "scripts" / "_purge_indexing_chroma_sqlite.py"
+    if not script.is_file():
+        return PurgeResult(dry_run=dry_run, errors=[f"missing worker script: {script}"])
+
+    cmd = [sys.executable, str(script)]
+    if not dry_run:
+        cmd.append("--apply")
+    if user_id:
+        cmd.extend(["--user-id", user_id])
+    _purge_log(f"purge-indexing: subprocess {' '.join(cmd)}", log)
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=max(120, max_delete // 10),
+            cwd=str(script.parents[1]),
+        )
+    except subprocess.TimeoutExpired:
+        return PurgeResult(dry_run=dry_run, errors=["purge-indexing subprocess timed out"])
+    except Exception as exc:
+        return PurgeResult(dry_run=dry_run, errors=[f"purge-indexing subprocess failed: {exc}"])
+
+    if proc.stderr:
+        for line in proc.stderr.splitlines():
+            _purge_log(line, log)
+    if proc.returncode != 0 and not proc.stdout.strip():
+        err = (proc.stderr or "").strip() or f"exit code {proc.returncode}"
+        return PurgeResult(dry_run=dry_run, errors=[err])
+
+    try:
+        payload = json.loads(proc.stdout.strip().splitlines()[-1])
+    except Exception as exc:
+        return PurgeResult(
+            dry_run=dry_run,
+            errors=[f"purge-indexing subprocess bad JSON: {exc}; stdout={proc.stdout[:500]!r}"],
+        )
+    return PurgeResult(
+        dry_run=bool(payload.get("dry_run", dry_run)),
+        deleted=int(payload.get("deleted", 0)),
+        skipped=int(payload.get("skipped", 0)),
+        errors=list(payload.get("errors") or []),
+    )
+
+
+def purge_indexing_logs(
+    db,
+    *,
+    user_id: str | None = None,
+    dry_run: bool = True,
+    max_delete: int = 5000,
+    log: Callable[[str], None] | None = None,
+) -> PurgeResult:
+    """Delete per-file runProjectAnalysis rows (Indexed source `...`) across project channels."""
+    use_sqlite = os.environ.get("MEM0_PURGE_INDEXING_SQLITE", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+    )
+    if use_sqlite:
+        if _purge_indexing_use_subprocess():
+            return purge_indexing_logs_subprocess(
+                user_id=user_id,
+                dry_run=dry_run,
+                max_delete=max_delete,
+                log=log,
+            )
+        return _purge_indexing_logs_sqlite(
+            user_id=user_id,
+            dry_run=dry_run,
+            max_delete=max_delete,
+            log=log,
+        )
+
+    use_chroma = os.environ.get("MEM0_PURGE_INDEXING_CHROMA", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+    )
+    if use_chroma:
+        return purge_indexing_logs_chroma(
+            user_id=user_id,
+            dry_run=dry_run,
+            max_delete=max_delete,
+            log=log,
+        )
+
+    try:
+        from autolinkingbrain.mem0_fetch import discover_user_ids
+    except Exception as exc:
+        return PurgeResult(dry_run=dry_run, errors=[f"discover_user_ids failed: {exc}"])
+
+    uids = [user_id] if user_id else [u for u in discover_user_ids() if u.startswith("project_")]
+    ids: list[str] = []
+    for uid in uids:
+        _purge_log(f"purge-indexing: scanning channel {uid}", log)
+        for row in fetch_all_rows(db, uid):
+            if not isinstance(row, dict) or not row.get("id"):
+                continue
+            if is_indexing_batch_log(str(row.get("memory") or "")):
+                ids.append(str(row["id"]))
+    ids = ids[:max_delete]
+    if dry_run:
+        return PurgeResult(dry_run=True, deleted=0, skipped=len(ids))
+    deleted = 0
+    errors: list[str] = []
+    for mid in ids:
+        try:
+            db.delete(mid)
             deleted += 1
         except Exception as exc:
             errors.append(f"{mid}: {exc}")

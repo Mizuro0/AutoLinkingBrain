@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import queue
 import threading
+from datetime import datetime, timezone
 from typing import Any
 
 from autolinkingbrain import brain_metrics
@@ -24,7 +25,10 @@ def _worker_loop(q: queue.Queue) -> None:
         if item is None:
             break
         try:
-            brain_metrics.log_event(**item)
+            if isinstance(item, dict):
+                rec = dict(item)
+                rec.setdefault("ts", datetime.now(timezone.utc).isoformat())
+                brain_metrics.write_event_record(rec)
         except Exception:
             pass
         finally:

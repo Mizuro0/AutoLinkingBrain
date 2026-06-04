@@ -28,7 +28,7 @@ class ProjectIndexState:
     def connect(self) -> sqlite3.Connection:
         if self._conn is None:
             self.brain_dir.mkdir(parents=True, exist_ok=True)
-            self._conn = sqlite3.connect(str(self.db_path))
+            self._conn = sqlite3.connect(str(self.db_path), timeout=10)
             self._conn.row_factory = sqlite3.Row
             self._init_schema()
         return self._conn
@@ -153,7 +153,23 @@ class ProjectIndexState:
         self,
         *,
         extensions: tuple[str, ...] = (".kt", ".java", ".py", ".ts", ".tsx", ".go"),
-        exclude_dirs: tuple[str, ...] = (".git", "node_modules", "build", "dist", ".gradle", "target", "chroma_data"),
+        exclude_dirs: tuple[str, ...] = (
+            ".git",
+            "node_modules",
+            "build",
+            "dist",
+            ".gradle",
+            "target",
+            "chroma_data",
+            ".venv",
+            "venv",
+            "bin",
+            "site-packages",
+            "__pycache__",
+            ".brain",
+            ".codegraph",
+            ".cursor",
+        ),
         max_files: int = 2000,
     ) -> list[tuple[Path, str]]:
         found: list[tuple[Path, str]] = []

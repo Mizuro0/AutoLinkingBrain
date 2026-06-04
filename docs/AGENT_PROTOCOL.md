@@ -20,11 +20,21 @@ For repo overview, stack, architecture, onboarding:
 | **QwenReviewer** | Local Ollama diff review | `standard`+ |
 | **ArchitectureCurator** | `docs/ARCHITECTURE.generated.md`, per-feature sections | `full` |
 
-```powershell
-python brain.py mcp install --scope global --profile full
+**Repo default** for new clones: MCP profile `standard`. **Your machine:** `config/local/install.yaml` (gitignored, see `config/local/README.md`):
+
+```yaml
+profile: full
+sync_mcp_on_agent_sync: true
 ```
 
-**Feature architecture loop:** Brain recall → CodeGraph → `buildArchitectureContext` → `updateArchitectureSection` (one section per call) → `storeKnowledge` → `getArchitectureDoc`. Skill: `architecture-by-feature`.
+```powershell
+python brain.py mcp install
+python brain.py sync-agent --force-copy
+```
+
+One-off override: `python brain.py mcp install --profile full`
+
+**Feature architecture loop (Ollama):** `planArchitectureRun` → per module: Brain + CodeGraph → `runArchitectModule` → `getArchitectHandoff` → read `docs/architecture/modules/<slug>.md` → `recordAgentArchitectureReview` → `storeKnowledge`. Protocol: `docs/ARCHITECTURE_AGENT_PROTOCOL.md`. Skill: `architecture-by-feature`.
 
 ## 3. Writes (automated — not optional)
 

@@ -15,10 +15,10 @@ MCP server: **`user-AutoLinkingBrain`**. Skill: **`autolinking-brain-mcp`**.
 
 1. **First MCP call:** `sessionContextPack` with a task-specific `recall_query` (health + curated facts in one round-trip).
    - Use `checkProjectHealth` alone only when you do not need recall yet.
-2. If `ANALYSIS STATUS: required_*` and `AUTO_RUN: yes` → **`runProjectAnalysis`** immediately (one batch per turn until `next=done` or user stops you).
+2. If `ANALYSIS STATUS: required_*` and `AUTO_RUN: yes` → **`syncProjectIndex`** or `syncAllProjects` (not MCP `runProjectAnalysis` loops). CLI: `python brain.py analyze sync`.
 3. **Do not grep/read/glob** for architecture, decisions, contracts, or “how does X work” until Brain + CodeGraph return nothing useful.
 4. **CodeGraph** (`user-codegraph`) for symbols, callers, trace, impact — before opening random files.
-5. **Feature / module architecture doc** → skill **`architecture-by-feature`**, MCP **`user-ArchitectureCurator`** (profile `full`): recall + CodeGraph first, then section updates; always **`storeKnowledge`** after.
+5. **User asks to compose architecture** (*составить архитектуру*, *спроектировать*, *architecture doc*) → **read skill `architecture-by-feature` + rule `architecture-curator`**. **You** analyze project & weak spots; Ollama only **`runArchitectModule`** per module. Always **`storeKnowledge`** after each module.
 6. **grep/read** only for: exact line edits, confirming a single detail Brain/CodeGraph missed, or when recall says “No curated facts found”.
 
 ## During work
@@ -27,13 +27,14 @@ MCP server: **`user-AutoLinkingBrain`**. Skill: **`autolinking-brain-mcp`**.
 - After decisions, bugfixes, API changes, subtask done → **`storeKnowledge`** (English, `tech`, `scenario`, `context_path` in monorepo).
 - Reindex when `REINDEX_PROTOCOL: required` → `registerDependency` + `storeKnowledge` + `markIndexingComplete`.
 
-**Hooks = autolog (noisy). Curated memory = `storeKnowledge` + `runProjectAnalysis`.**
+**Session logs** → SQLite `.cursor/autolog.db` via hooks (`listSessionAutolog` / `searchSessionAutolog`). **Curated facts** → Mem0 via `storeKnowledge` only. Never treat autolog as architecture truth.
 
 ## Writes
 
 - English body; include **file path** in text when possible.
 - Monorepo: **`context_path`** → correct `project_<slug>`.
-- `scope`: `project` local; `both` reusable patterns.
+- `scope`: `project` = this repo only; `global` = `global_skills` (ES/SQL/JVM patterns, hard-won lessons); `both` = global + local copy when both matter.
+- Recall searches **project + global_skills** by default (`retrieveChain` / `sessionContextPack`).
 
 ## Reads
 
@@ -41,9 +42,10 @@ MCP server: **`user-AutoLinkingBrain`**. Skill: **`autolinking-brain-mcp`**.
 |----------|------|
 | Health, coverage, incoming deps | `sessionContextPack` / `checkProjectHealth` |
 | Prior decisions, architecture | `retrieveChain` / recall in pack |
+| Prior session narrative / what we tried | `searchSessionAutolog` / `listSessionAutolog` |
 | Where in code / who calls X | CodeGraph |
 | Cross-repo contracts | `retrieveChain` + `linked_projects` |
-| Feature arch document | ArchitectureCurator + `storeKnowledge` |
+| Compose architecture (user request) | **You** analyze; ArchitectureCurator Ollama drafts MD; `storeKnowledge` |
 
 ## MCP profiles (global)
 

@@ -12,7 +12,7 @@ MCP_INSTRUCTIONS = """AutoLinkingBrain — semantic memory and cross-repo depend
 
 MANDATORY automated session loop (execute without user asking):
 1. Start: sessionContextPack or checkProjectHealth BEFORE grep/read for repo overview or architecture.
-2. If ANALYSIS STATUS required_* + AUTO_RUN yes → runProjectAnalysis (one batch per turn).
+2. User asks to refresh/reindex project info → syncProjectIndex (one repo) or syncAllProjects (all discovered) — NOT repeated runProjectAnalysis.
 3. Before shared API changes → retrieveChain with linked_projects.
 4. After decisions, bugfixes, API changes → storeKnowledge (English, tech, scenario, context_path in monorepo).
 5. End of task: if no storeKnowledge yet → one summary storeKnowledge.
@@ -25,11 +25,12 @@ Pair with CodeGraph when both MCP servers are configured:
 Tool routing:
 1. Repo overview / onboarding: sessionContextPack or checkProjectHealth BEFORE grep/read for indexing state and incoming dependencies.
 2. "What we decided / documented": retrieveChain or sessionContextPack (facts_only by default) — not grep.
+2b. "What happened in past sessions / debugging arc": searchSessionAutolog or listSessionAutolog (SQLite autolog) — not Mem0.
 3. "Where in code / who calls X / impact of change": CodeGraph (codegraph_search, codegraph_trace, codegraph_explore, codegraph_impact) — not blind file scans.
 4. Cross-repo public API changes: retrieveChain with linked_projects BEFORE editing; registerDependency when indexing outbound links.
 5. After full project scan: markIndexingComplete (FINAL_INDEXING_MARK); use storeKnowledge for facts (English body, tech/scenario metadata).
-6. ANALYSIS STATUS required + AUTO_RUN: runProjectAnalysis (auto/full/incremental) without asking the user.
-7. Knowledge cleanup: auditKnowledge dry-run → purgeMemories with confirm_token (or brain.py gc).
+6. ANALYSIS STATUS required + AUTO_RUN: syncProjectIndex / brain.py analyze sync (subprocess, safe); runProjectAnalysis = one batch only.
+7. Knowledge cleanup: auditKnowledge → purgeMemories; purgeIndexingLogs / brain.py gc purge-indexing for Indexed source noise.
 
 Writes via storeKnowledge, registerDependency, markIndexingComplete: English only, one fact per entry when possible.
 

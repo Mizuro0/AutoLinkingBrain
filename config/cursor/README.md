@@ -28,6 +28,8 @@ Per-project `.cursor/rules/` is **legacy opt-in** only: `MEM0_SYNC_PROJECT_RULES
 
 Implementation: `autolinkingbrain/cursor_agent.py`. Disable: `MEM0_SKIP_CURSOR_AGENT_SYNC=1`.
 
-Fork workflow: clone → `pip install -r requirements.txt` → `python brain.py onboard` → Reload Cursor. Done.
+Fork workflow: clone → `pip install -r requirements.txt` → optional `config/local/install.yaml` → `python brain.py onboard` → Reload Cursor. Done.
+
+Per-device MCP profile (`full` with ArchitectureCurator): [../local/README.md](../local/README.md) — not committed; repo default stays `standard`.
 
 Agent protocol: [docs/AGENT_PROTOCOL.md](../../docs/AGENT_PROTOCOL.md).

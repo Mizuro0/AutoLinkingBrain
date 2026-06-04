@@ -7,6 +7,15 @@ __pycache__/
 .env
 .python-version
 
+# Per-machine MCP profile (copy from config/local/install.yaml.example)
+config/local/install.yaml
+
+# Generated / local indexes and DBs
+.brain/
+**/.brain/
+.cursor/autolog.db
+scripts/manual_full_check_report.json
+
 # Runtime / local state (never commit)
 .cursor/mem0_autolog_last.txt
 .cursor/mem0_autolog_hook.log

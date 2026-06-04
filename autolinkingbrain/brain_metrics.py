@@ -31,6 +31,17 @@ def events_enabled() -> bool:
     return os.environ.get("MEM0_METRICS", "1").strip().lower() not in ("0", "false", "no")
 
 
+def write_event_record(rec: dict[str, object]) -> None:
+    """Append one JSON line to brain_events.jsonl (never re-enters async queue)."""
+    path = events_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fp:
+            fp.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
 def log_event(event: str, source: str, **fields: object) -> None:
     if not events_enabled():
         return
@@ -42,21 +53,15 @@ def log_event(event: str, source: str, **fields: object) -> None:
             return
     except ImportError:
         pass
-    path = events_path()
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        rec: dict[str, object] = {
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "event": event,
-            "source": source,
-        }
-        for k, v in fields.items():
-            if v is not None:
-                rec[k] = v
-        with path.open("a", encoding="utf-8") as fp:
-            fp.write(json.dumps(rec, ensure_ascii=False) + "\n")
-    except Exception:
-        pass
+    rec: dict[str, object] = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "event": event,
+        "source": source,
+    }
+    for k, v in fields.items():
+        if v is not None:
+            rec[k] = v
+    write_event_record(rec)
 
 
 def log_hook(hook: str, status: str, *, project: str = "", **fields: object) -> None:
@@ -158,13 +163,10 @@ def aggregate_for_viewer(*, days: float = 7.0, recent_limit: int = 80) -> dict:
         try:
             from autolinkingbrain.project_analysis import evaluate_analysis_status
             from autolinkingbrain.project_index_state import ProjectIndexState
-            from mem0 import Memory
-            from autolinkingbrain.mem0_settings import mem0_vector_config
             from autolinkingbrain.mem0_project_slug import resolve_project_slug
 
             slug = resolve_project_slug(project_root=proot)
-            db = Memory.from_config(config_dict=mem0_vector_config())
-            st = evaluate_analysis_status(db, project_root=proot, project_slug=slug)
+            st = evaluate_analysis_status(None, project_root=proot, project_slug=slug)
             report["ops"] = {
                 "analysis": st.format_block(),
                 "project_index": str(ProjectIndexState(proot).md_path),
@@ -364,20 +366,34 @@ def _top_chart_data(data: dict[str, int], *, limit: int) -> list[dict]:
     return [{"label": k.replace("hook.", "").replace("mcp.", ""), "count": v} for k, v in items]
 
 
-def _codegraph_summary() -> dict:
+_CODEGRAPH_SUMMARY_CACHE: dict | None = None
+
+
+def _codegraph_summary(*, use_cache: bool = True) -> dict:
+    global _CODEGRAPH_SUMMARY_CACHE
+    if use_cache and _CODEGRAPH_SUMMARY_CACHE is not None:
+        return dict(_CODEGRAPH_SUMMARY_CACHE)
     try:
         from autolinkingbrain.codegraph_init import collect_repo_paths, codegraph_bin, repo_has_index
 
         if not codegraph_bin():
-            return {"available": False, "indexed": 0, "total": 0}
-        repos = collect_repo_paths()
-        indexed = sum(1 for r in repos if repo_has_index(r))
-        return {"available": True, "indexed": indexed, "total": len(repos)}
+            out = {"available": False, "indexed": 0, "total": 0}
+        else:
+            repos = collect_repo_paths()
+            indexed = sum(1 for r in repos if repo_has_index(r))
+            out = {"available": True, "indexed": indexed, "total": len(repos)}
+        if use_cache:
+            _CODEGRAPH_SUMMARY_CACHE = out
+        return out
     except Exception as exc:
         return {"available": False, "error": str(exc)[:120]}
 
 
 def _mem0_channel_summary() -> dict:
+    from autolinkingbrain.mem0_fetch import _fetch_use_sqlite, chroma_total_memories_sqlite
+
+    if _fetch_use_sqlite():
+        return chroma_total_memories_sqlite()
     try:
         import chromadb
         from chromadb.config import Settings
@@ -390,7 +406,7 @@ def _mem0_channel_summary() -> dict:
         )
         col = client.get_collection(CHROMA_COLLECTION)
         total = col.count()
-        return {"collection": CHROMA_COLLECTION, "total_memories": total}
+        return {"collection": CHROMA_COLLECTION, "total_memories": total, "backend": "chromadb"}
     except Exception as exc:
         return {"error": str(exc)[:120]}
 

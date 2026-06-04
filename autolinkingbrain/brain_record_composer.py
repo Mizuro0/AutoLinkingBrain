@@ -60,6 +60,54 @@ def infer_tech(path: str) -> str:
     return "general"
 
 
+_SIGNAL_ROLES = frozenset({"REST", "SERVICE", "DAO", "CONTROLLER"})
+_TYPE_NAME_RE = re.compile(r"(?:class|interface|object|enum)\s+(\w+)")
+
+
+def extract_type_names(content_hint: str, *, limit: int = 6) -> list[str]:
+    seen: list[str] = []
+    for name in _TYPE_NAME_RE.findall(content_hint or ""):
+        if name not in seen:
+            seen.append(name)
+        if len(seen) >= limit:
+            break
+    return seen
+
+
+def extract_http_paths(content_hint: str, *, limit: int = 8) -> list[str]:
+    paths: list[str] = []
+    for m in re.finditer(r'@(?:Get|Post|Put|Delete|Patch)Mapping\s*\(\s*["\']([^"\']+)', content_hint or "", re.I):
+        p = m.group(1).strip()
+        if p and p not in paths:
+            paths.append(p)
+        if len(paths) >= limit:
+            break
+    return paths
+
+
+def compose_file_signal(
+    *,
+    path: str,
+    content_hint: str = "",
+    code_role: str = "",
+    tech: str = "",
+) -> ComposedFact | None:
+    """One curated Mem0 fact for a meaningful source file (REST/SERVICE/DAO), not a scan log."""
+    role = (code_role or infer_code_role(path, content_hint)).upper()
+    if role not in _SIGNAL_ROLES:
+        return None
+    rel = path.replace("\\", "/")
+    names = extract_type_names(content_hint)
+    if not names:
+        return None
+    endpoints = extract_http_paths(content_hint) if role in ("REST", "CONTROLLER") else []
+    parts = [f"`{rel}` defines {', '.join(names)} ({role})."]
+    if endpoints:
+        parts.append(f"HTTP mappings: {', '.join(endpoints[:6])}.")
+    body = " ".join(parts)
+    return ComposedFact(tech=tech or infer_tech(path), scenario="architecture", body=body, code_role=role)
+
+
 def compose_entity_fact(
     *,
     path: str,

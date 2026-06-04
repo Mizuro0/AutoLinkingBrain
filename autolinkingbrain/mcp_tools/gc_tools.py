@@ -7,7 +7,12 @@ import json
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.server import Context
 
-from autolinkingbrain.mem0_gc import audit_channel, list_duplicates, purge_candidates
+from autolinkingbrain.mem0_gc import (
+    audit_channel,
+    list_duplicates,
+    purge_candidates,
+    purge_indexing_logs,
+)
 from autolinkingbrain.mcp_context import McpContext
 from autolinkingbrain.mcp_constants import GLOBAL_ID
 
@@ -62,6 +67,50 @@ def register(mcp: FastMCP, mctx: McpContext) -> None:
         result = purge_candidates(mctx.db, report, token, dry_run=dry_run)
         if not dry_run and token in _AUDIT_CACHE:
             del _AUDIT_CACHE[token]
+        return json.dumps(
+            {
+                "dry_run": result.dry_run,
+                "deleted": result.deleted,
+                "skipped": result.skipped,
+                "errors": result.errors,
+            },
+            ensure_ascii=False,
+        )
+
+    @mcp.tool(name="purgeIndexingLogs")
+    async def purge_indexing_logs_tool(
+        dry_run: bool = True,
+        project_slug: str = "",
+        project_root: str = "",
+        context_path: str = "",
+        *,
+        ctx: Context,
+    ) -> str:
+        """
+        Remove per-file runProjectAnalysis noise (Indexed source `...`) from Mem0.
+        Default dry_run=True. Omit project_slug to purge all project_* channels.
+        """
+        await mctx.refresh_project_slug_from_mcp_roots(ctx)
+        target_uid: str | None = None
+        if (project_slug or "").strip() or (context_path or "").strip():
+            pid, _ = mctx.resolve_project(
+                project_slug=project_slug,
+                project_root=project_root,
+                context_path=context_path,
+            )
+            target_uid = f"project_{pid}"
+        def _log(msg: str) -> None:
+            import sys
+
+            print(msg, file=sys.stderr, flush=True)
+
+        # Subprocess purge: MCP holds Mem0/Chroma open; in-process SQLite DELETE can crash the server.
+        result = purge_indexing_logs(
+            None,
+            user_id=target_uid,
+            dry_run=dry_run,
+            log=_log,
+        )
         return json.dumps(
             {
                 "dry_run": result.dry_run,

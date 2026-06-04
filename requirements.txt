@@ -1,3 +1,6 @@
 # Core runtime (MCP server, Brain Viewer HTTP, hooks, scripts).
-mcp>=1.27.0,<2
-mem0ai>=2.0.0,<3
+# Transitive pins: requirements-lock.txt — CI installs from lock.
+mcp==1.27.2
+mem0ai==2.0.4
+chromadb==1.5.8
+ollama==0.6.1

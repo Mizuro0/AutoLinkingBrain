@@ -21,10 +21,22 @@ When **AutoLinkingBrain** MCP is available, persist knowledge **in the same sess
 | Completed reindex slice | indexing | module map, entrypoints |
 | Learned project-specific gotcha | architecture | env, deploy, config trap |
 | Finished ArchitectureCurator feature slice | architecture | summary + `docs/ARCHITECTURE.generated.md` path |
+| Hard debugging / non-obvious root cause | bugfix | symptoms, cause, fix — `scope: both` if reusable |
+| Cross-project pattern (ES, SQL, JVM, caching, etc.) | architecture | `scope: global` or `both` — write **expanded** (constraints → what worked) |
 
-One fact per call. Include a **file path** in `text` or pass `context_path`.
+One fact per call. **Project-local:** include a **file path** in `text` or `context_path`. **Global patterns:** path optional; prefer concrete rules (settings, query shape, index mapping).
 
-**Generated arch doc alone is not enough** — always `storeKnowledge` after `updateArchitectureSection` so Brain recall stays curated.
+## global_skills (`scope: global` | `both`)
+
+- **`global`** — transferable know-how (Elasticsearch indexing conventions, DB query plans, lock contention, framework traps) without tying to one repo.
+- **`both`** — same pattern **plus** how it applies in the current project (keep one dense fact, not two vague ones).
+- **`project`** (default) — only this codebase (module map, local API, deploy).
+
+Hooks **autolog** → **SQLite** `.cursor/autolog.db` only (not Mem0 unless `MEM0_AUTOLOG_ALLOW_MEM0=1`). Read logs with **`listSessionAutolog`** / **`searchSessionAutolog`**. Curated recall = **`storeKnowledge`** only.
+
+Body may be long (up to ~5500 chars) — use for “lessons learned”, not one-liners.
+
+**Generated arch MD alone is not enough** — after each module `recordAgentArchitectureReview` → `storeKnowledge` (scenario: architecture, paths to `docs/architecture/modules/<slug>.md`).
 
 ## Minimum per session
 
@@ -38,6 +50,9 @@ One fact per call. Include a **file path** in `text` or pass `context_path`.
 server: user-AutoLinkingBrain
 tool: storeKnowledge
 { text: "English fact with path src/foo.py ...", tech: "...", scenario: "architecture", scope: "project", context_path: "..." }
+
+# Global pattern example:
+{ text: "Elasticsearch: use nested for X; avoid scripting on Y; reindex alias Z …", tech: "elasticsearch", scenario: "architecture", scope: "global" }
 ```
 
 If MCP errors: note briefly, continue work — retry store on next stable turn.

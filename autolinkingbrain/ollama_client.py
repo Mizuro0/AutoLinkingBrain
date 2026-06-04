@@ -12,6 +12,11 @@ def review_model() -> str:
     return os.environ.get("OLLAMA_REVIEW_MODEL", "qwen2.5-coder:7b").strip() or "qwen2.5-coder:7b"
 
 
+def architect_model() -> str:
+    """Local model for ArchitectureCurator (defaults to review model)."""
+    return os.environ.get("OLLAMA_ARCHITECT_MODEL", "").strip() or review_model()
+
+
 def ollama_base_url() -> str:
     return os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
 

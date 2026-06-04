@@ -13,6 +13,8 @@ from autolinkingbrain.indexing_coverage import (
     count_outbound_links,
     indexing_strict,
     is_countable_fact,
+    is_indexing_batch_log,
+    is_retrievable_fact,
     parse_scenario_tags,
 )
 from autolinkingbrain.mcp_context import McpContext
@@ -23,6 +25,16 @@ def test_is_countable_fact_excludes_mark_and_autolog() -> None:
     assert is_countable_fact("[CURSOR] [AUT_LOG] summary") is False
     assert is_countable_fact("[LINK] [backend] depends on [crm] via [API]. Contract: x") is False
     assert is_countable_fact("[KOTLIN] [ARCHITECTURE] (Updated: 2026): stack overview") is True
+
+
+def test_indexing_batch_log_excluded_from_recall() -> None:
+    noise = (
+        "[KOTLIN] [ARCHITECTURE] [ROLE:SERVICE] (Updated: 2026-06-04): "
+        "Indexed source `src/main/FooService.kt`."
+    )
+    assert is_indexing_batch_log(noise)
+    assert not is_countable_fact(noise)
+    assert not is_retrievable_fact(noise)
 
 
 def test_parse_scenario_tags() -> None:

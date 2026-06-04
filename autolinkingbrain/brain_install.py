@@ -136,7 +136,7 @@ def _pip_needed() -> bool:
         return True
 
 
-def _mcp_configured(py: Path, *, with_codegraph: bool) -> bool:
+def _mcp_configured(py: Path, *, with_codegraph: bool, profile: str = "standard") -> bool:
     path = Path.home() / ".cursor" / "mcp.json"
     data = _read_json(path)
     servers = data.get("mcpServers") if isinstance(data.get("mcpServers"), dict) else {}
@@ -148,14 +148,25 @@ def _mcp_configured(py: Path, *, with_codegraph: bool) -> bool:
     args = entry.get("args") or []
     if not any("brain_server.py" in str(a) for a in args):
         return False
-    qwen = servers.get("QwenReviewer")
-    if not isinstance(qwen, dict):
-        return False
-    if str(qwen.get("command", "")) != str(py):
-        return False
-    qargs = qwen.get("args") or []
-    if not any("qwen_review_server.py" in str(a) for a in qargs):
-        return False
+    prof = (profile or "standard").strip().lower()
+    if prof in ("standard", "full"):
+        qwen = servers.get("QwenReviewer")
+        if not isinstance(qwen, dict):
+            return False
+        if str(qwen.get("command", "")) != str(py):
+            return False
+        qargs = qwen.get("args") or []
+        if not any("qwen_review_server.py" in str(a) for a in qargs):
+            return False
+    if prof == "full":
+        arch = servers.get("ArchitectureCurator")
+        if not isinstance(arch, dict):
+            return False
+        if str(arch.get("command", "")) != str(py):
+            return False
+        aargs = arch.get("args") or []
+        if not any("architecture_curator_server.py" in str(a) for a in aargs):
+            return False
     if with_codegraph and shutil.which("codegraph"):
         cg = servers.get("codegraph")
         if not isinstance(cg, dict) or cg.get("command") != "codegraph":
@@ -310,9 +321,17 @@ def _merge_mcp_to_path(
     return path
 
 
-def _merge_mcp(py: Path, *, with_codegraph: bool, profile: str = "standard") -> Path:
-    path = Path.home() / ".cursor" / "mcp.json"
-    return _merge_mcp_to_path(path, py, profile=profile, with_codegraph=with_codegraph)
+def _merge_mcp(py: Path, *, with_codegraph: bool | None = None, profile: str | None = None) -> Path:
+    from autolinkingbrain.local_install import resolve_mcp_install_kwargs
+
+    kw = resolve_mcp_install_kwargs(profile=profile, with_codegraph=with_codegraph)
+    path = _mcp_json_for_scope(kw["scope"], kw["project_root"] or None, kw["host"])
+    return _merge_mcp_to_path(
+        path,
+        py,
+        profile=kw["profile"],
+        with_codegraph=kw["with_codegraph"],
+    )
 
 
 def mcp_status(*, scope: str = "global", project_root: str = "", host: str = "cursor") -> dict:
@@ -331,12 +350,29 @@ def mcp_status(*, scope: str = "global", project_root: str = "", host: str = "cu
     }
 
 
-def mcp_install(*, scope: str = "global", project_root: str = "", profile: str = "standard", host: str = "cursor") -> int:
+def mcp_install(
+    *,
+    scope: str | None = None,
+    project_root: str | None = None,
+    profile: str | None = None,
+    host: str | None = None,
+    with_codegraph: bool | None = None,
+) -> int:
+    from autolinkingbrain.local_install import local_install_status_line, resolve_mcp_install_kwargs
+
+    kw = resolve_mcp_install_kwargs(
+        profile=profile,
+        scope=scope,
+        project_root=project_root,
+        host=host,
+        with_codegraph=with_codegraph,
+    )
     py = _ensure_venv()
     _pip_install(py)
-    path = _mcp_json_for_scope(scope, project_root or None, host)
-    _merge_mcp_to_path(path, py, profile=profile, with_codegraph=bool(shutil.which("codegraph")))
-    print(f"MCP installed: {path} profile={profile}")
+    path = _mcp_json_for_scope(kw["scope"], kw["project_root"] or None, kw["host"])
+    _merge_mcp_to_path(path, py, profile=kw["profile"], with_codegraph=kw["with_codegraph"])
+    print(f"MCP installed: {path} profile={kw['profile']}")
+    print(local_install_status_line())
     return 0
 
 
@@ -418,7 +454,15 @@ def run_doctor(*, project_root: str = "", as_json: bool = False) -> dict:
             checks.append({"name": "mcp_project", "status": "warn", "detail": "duplicate global+project"})
     if g_st["brain_configured"] and g_st["venv_ok"]:
         prof = "standard"
-        if load_config:
+        try:
+            from autolinkingbrain.local_install import load_local_install
+
+            loc = load_local_install()
+            if loc:
+                prof = loc.profile
+        except Exception:
+            pass
+        if prof == "standard" and load_config:
             prof = load_config(project_root=project_root or None).profile
         if prof == "full":
             data = _read_json(Path(g_st["path"]))
@@ -455,13 +499,13 @@ def merge_cursor_config(
     skip_mcp: bool = False,
     skip_hooks: bool = False,
     skip_agent_assets: bool = False,
-    with_codegraph: bool = False,
+    with_codegraph: bool | None = None,
 ) -> list[Path]:
     """Merge AutoLinkingBrain into ~/.cursor/mcp.json, hooks.json, skill, and rules."""
     interpreter = py or _venv_python()
     written: list[Path] = []
     if not skip_mcp:
-        written.append(_merge_mcp(interpreter, with_codegraph=with_codegraph))
+        written.append(_merge_mcp(interpreter, with_codegraph=with_codegraph or False))
     if not skip_hooks:
         written.append(_merge_hooks(interpreter))
     if not skip_agent_assets:
@@ -502,8 +546,11 @@ def run_install(
 
     if not skip_mcp:
         print("==> MCP config")
+        from autolinkingbrain.local_install import local_install_status_line
+
         p = _merge_mcp(py, with_codegraph=with_codegraph)
         print(f"  -> {p}")
+        print(f"  {local_install_status_line()}")
 
     if not skip_hooks:
         print("==> hooks.json")
@@ -548,12 +595,16 @@ def run_setup(
     else:
         print(f"  OK: {py} (requirements unchanged)")
 
-    if not _mcp_configured(py, with_codegraph=with_codegraph):
+    from autolinkingbrain.local_install import load_local_install, resolve_mcp_install_kwargs
+
+    kw = resolve_mcp_install_kwargs(with_codegraph=with_codegraph)
+    prof = kw["profile"]
+    if not _mcp_configured(py, with_codegraph=kw["with_codegraph"], profile=prof):
         print("==> MCP config")
-        p = _merge_mcp(py, with_codegraph=with_codegraph)
+        p = _merge_mcp(py, with_codegraph=kw["with_codegraph"], profile=prof)
         print(f"  -> {p}")
     else:
-        print("==> MCP config OK")
+        print(f"==> MCP config OK (profile={prof})")
 
     if not _hooks_configured(py):
         print("==> hooks.json")

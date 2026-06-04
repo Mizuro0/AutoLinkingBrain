@@ -12,8 +12,10 @@ AutoLinkingBrain — one launcher, minimal commands.
   python brain.py onboard     one-command setup (config + MCP + hooks)
   python brain.py doctor      diagnostics
   python brain.py gc audit    knowledge GC dry-run
+  python brain.py gc purge-indexing --apply   remove Indexed source noise
   python brain.py migrate-autolog --dry-run   Chroma autolog → .cursor/autolog.db
-  python brain.py analyze auto  project analysis batch
+  python brain.py analyze sync     index all discovered repos (set-and-forget)
+  python brain.py analyze auto     project analysis batch (single repo)
 
 Double-click start.bat (Windows) or ./start.sh (Unix) — setup + viewer.
 """
@@ -28,6 +30,35 @@ import webbrowser
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+
+# Avoid chromadb native client on Windows for read-heavy CLI (stats, gc, migrate).
+os.environ.setdefault("MEM0_FETCH_SQLITE", "1")
+
+# CLI commands that import mem0/chromadb — re-run under .venv when user calls system `python`.
+_MEM0_CLI_COMMANDS = frozenset({"gc", "migrate-autolog", "health", "context", "analyze"})
+
+
+def _venv_python() -> Path:
+    name = "Scripts/python.exe" if sys.platform == "win32" else "bin/python"
+    return ROOT / ".venv" / name
+
+
+def _reexec_in_venv_if_needed(command: str | None) -> None:
+    if not command or command not in _MEM0_CLI_COMMANDS:
+        return
+    if os.environ.get("BRAIN_SKIP_VENV_REEXEC", "").strip():
+        return
+    venv_py = _venv_python()
+    if not venv_py.is_file():
+        return
+    try:
+        if Path(sys.executable).resolve() == venv_py.resolve():
+            return
+    except OSError:
+        pass
+    os.environ["BRAIN_SKIP_VENV_REEXEC"] = "1"
+    script = str(ROOT / "brain.py")
+    os.execv(str(venv_py), [str(venv_py), script, *sys.argv[1:]])
 
 
 def _viewer_host() -> str:
@@ -191,6 +222,7 @@ def cmd_sync_agent(args: argparse.Namespace) -> int:
         sync_agent_all_repos_enabled,
         sync_cursor_agent_assets,
     )
+    from autolinkingbrain.local_install import load_local_install
 
     all_repos = bool(getattr(args, "all_repos", False)) or sync_agent_all_repos_enabled()
     written = sync_cursor_agent_assets(
@@ -203,6 +235,12 @@ def cmd_sync_agent(args: argparse.Namespace) -> int:
             print(p)
     else:
         print("OK (already up to date)")
+    loc = load_local_install()
+    if loc and loc.sync_mcp_on_agent_sync:
+        from autolinkingbrain.local_install import apply_local_mcp_install
+
+        print("==> MCP refresh (config/local/install.yaml)")
+        apply_local_mcp_install()
     return 0
 
 
@@ -275,6 +313,7 @@ def main() -> int:
 
     args = parser.parse_args()
     cmd = args.command
+    _reexec_in_venv_if_needed(cmd)
     if not cmd:
         ns = argparse.Namespace(no_browser=False, skip_setup=False)
         return cmd_viewer_with_setup(ns)

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from autolinkingbrain.brain_record_composer import compose_entity_fact, infer_code_role
+from autolinkingbrain.brain_record_composer import compose_file_signal, infer_code_role
 from autolinkingbrain.indexing_coverage import (
     analyze_indexing_coverage,
     load_project_memory_texts,
@@ -34,6 +34,18 @@ class AnalysisStatus:
         )
 
 
+def analysis_emit_signals_enabled() -> bool:
+    return os.environ.get("MEM0_ANALYSIS_EMIT_SIGNALS", "1").strip().lower() not in ("0", "false", "no")
+
+
+def analysis_max_signals_per_batch() -> int:
+    raw = os.environ.get("MEM0_ANALYSIS_MAX_SIGNALS", "3").strip()
+    try:
+        return max(0, min(int(raw), 10))
+    except ValueError:
+        return 3
+
+
 def evaluate_analysis_status(
     db,
     *,
@@ -48,11 +60,11 @@ def evaluate_analysis_status(
     state = ProjectIndexState(project_root)
     entities = state.list_entities()
     stale = state.stale_paths()
-    if not texts or not cov.sufficient:
+    if not entities and (not texts or not cov.sufficient):
         return AnalysisStatus(
             state="required_full",
             auto_run=auto_run,
-            reason="Mem0 empty or coverage insufficient",
+            reason="No index state and Mem0 coverage insufficient",
             entity_count=len(entities),
             stale_count=len(stale),
         )
@@ -64,18 +76,26 @@ def evaluate_analysis_status(
             entity_count=len(entities),
             stale_count=len(stale),
         )
+    if not cov.sufficient:
+        return AnalysisStatus(
+            state="required_full",
+            auto_run=auto_run,
+            reason="Curated Mem0 facts below coverage (use storeKnowledge for architecture/api_contract)",
+            entity_count=len(entities),
+            stale_count=len(stale),
+        )
     if not entities:
         return AnalysisStatus(
             state="required_full",
             auto_run=auto_run,
-            reason="No index state DB entities",
+            reason="No index state DB entities — run runProjectAnalysis",
             entity_count=0,
             stale_count=0,
         )
     return AnalysisStatus(
         state="ok",
         auto_run=False,
-        reason="Index state and coverage OK",
+        reason="Index state and curated coverage OK",
         entity_count=len(entities),
         stale_count=len(stale),
     )
@@ -106,22 +126,25 @@ def run_analysis_batch(
         targets = files
 
     processed = 0
-    stored = 0
+    signals_stored = 0
     uid = f"project_{project_slug}"
+    emit_signals = mem_add is not None and analysis_emit_signals_enabled()
+    signal_cap = analysis_max_signals_per_batch()
 
     for path, rel in targets[:batch]:
         try:
             digest = state.file_sha256(path)
-            hint = path.read_text(encoding="utf-8", errors="ignore")[:2000]
+            hint = path.read_text(encoding="utf-8", errors="ignore")[:4000]
         except OSError:
             continue
         role = infer_code_role(rel, hint)
-        fact = compose_entity_fact(path=rel, summary=f"Indexed source `{rel}`.", code_role=role, content_hint=hint)
         state.upsert_entity(rel, digest, role)
-        if mem_add:
-            mem_add(fact.enriched(), uid)
-            stored += 1
         processed += 1
+        if emit_signals and signals_stored < signal_cap:
+            signal = compose_file_signal(path=rel, content_hint=hint, code_role=role)
+            if signal is not None:
+                mem_add(signal.enriched(), uid)
+                signals_stored += 1
 
     state.finish_run(run_id, entities_processed=processed, status="ok")
     state.export_markdown()
@@ -132,7 +155,8 @@ def run_analysis_batch(
     return {
         "mode": effective_mode,
         "processed": processed,
-        "stored": stored,
+        "stored": 0,
+        "signals_stored": signals_stored,
         "remaining_estimate": remaining,
         "next": "continue" if remaining else "done",
         "status_after": evaluate_analysis_status(db, project_root=root, project_slug=project_slug).state,

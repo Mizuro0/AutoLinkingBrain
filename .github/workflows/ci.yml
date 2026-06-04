@@ -13,6 +13,8 @@ jobs:
       MEM0_TELEMETRY: "false"
       MEM0_CHROMA_PATH: /tmp/autolinkingbrain-chroma-ci
       MCP_HYBRID_SEARCH: "1"
+      MEM0_INSTALL_SYNC_DISCOVERED: "0"
+      CODEGRAPH_AUTO_DISCOVER: "0"
     steps:
       - uses: actions/checkout@v4
 
@@ -24,7 +26,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-dev.txt
+          pip install -r requirements-lock.txt
 
       - name: Run tests
         run: python -m pytest tests/ -q --tb=short

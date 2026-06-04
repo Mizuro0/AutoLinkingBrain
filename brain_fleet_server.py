@@ -19,11 +19,20 @@ DB_PATH = Path(os.environ.get("BRAIN_FLEET_DB", str(ROOT / "fleet_metrics.db")))
 INSTALL_TOKEN = os.environ.get("BRAIN_FLEET_INSTALL_TOKEN", "")
 ADMIN_TOKEN = os.environ.get("BRAIN_FLEET_ADMIN_TOKEN", "")
 PORT = int(os.environ.get("BRAIN_FLEET_PORT", "8600"))
+_db_lock = threading.Lock()
+
+
+def _open_db() -> sqlite3.Connection:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+    return conn
 
 
 def _init_db() -> None:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH))
+    with _db_lock:
+        conn = _open_db()
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS snapshots (
@@ -42,7 +51,8 @@ def _init_db() -> None:
 
 
 def _store(payload: dict) -> None:
-    conn = sqlite3.connect(str(DB_PATH))
+    with _db_lock:
+        conn = _open_db()
     conn.execute(
         "INSERT INTO snapshots(install_ref, device_ref, project_ref, ts, payload_json, received_at) VALUES(?,?,?,?,?,?)",
         (
@@ -59,7 +69,8 @@ def _store(payload: dict) -> None:
 
 
 def _list_snapshots(limit: int = 200) -> list[dict]:
-    conn = sqlite3.connect(str(DB_PATH))
+    with _db_lock:
+        conn = _open_db()
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
         "SELECT install_ref, device_ref, project_ref, ts, payload_json FROM snapshots ORDER BY id DESC LIMIT ?",

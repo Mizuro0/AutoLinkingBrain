@@ -154,6 +154,13 @@ class McpContext:
                 threshold=threshold,
                 normalize_search_results=normalize_search_results,
             )
+        from autolinkingbrain.mem0_fetch import _fetch_use_sqlite
+
+        if _fetch_use_sqlite():
+            from autolinkingbrain.mem0_hybrid_search import _bm25_search, _load_channel_rows
+
+            rows = _load_channel_rows(self.db, user_id)
+            return _bm25_search(rows, query, top_k)
         raw = self.db.search(
             query,
             filters={"user_id": user_id},
@@ -224,14 +231,14 @@ class McpContext:
         links = "\n".join([f"• {t}" for t in slice_rows]) if slice_rows else "No incoming links."
         if len(incoming_texts) > max_links:
             links += f"\n… and {len(incoming_texts) - max_links} more (raise MCP_HEALTH_MAX_INCOMING)."
-        try:
-            raw = self.db.get_all(filters={"user_id": project_user_id}, top_k=1000)
-            project_texts = [
-                str(r.get("memory") or "")
-                for r in self.rows_sorted_by_time(raw)
-            ]
-        except Exception:
-            project_texts = []
+        from autolinkingbrain.mem0_fetch import fetch_channel_rows
+
+        project_texts = [
+            str(r.get("memory") or "")
+            for r in self.rows_sorted_by_time(
+                fetch_channel_rows(project_user_id, top_k=1000, db=self.db),
+            )
+        ]
         coverage = analyze_indexing_coverage(project_texts, topology_texts, project_id)
         analysis_block = self._analysis_status_block(project_id, project_root=os.getcwd())
         return (
@@ -328,19 +335,17 @@ class McpContext:
         return "Ничего не найдено."
 
     def latest_indexing_mark_memory(self, project_user_id: str) -> str | None:
-        try:
-            raw = self.db.get_all(filters={"user_id": project_user_id}, top_k=1000)
-            log_mem0(
-                "read",
-                "mcp.checkProjectHealth.get_all",
-                user_id=project_user_id,
-                top_k=1000,
-                rows=count_get_all_rows(raw),
-                purpose="indexing_mark_scan",
-            )
-        except Exception:
-            return None
-        rows = raw.get("results", []) if isinstance(raw, dict) else raw or []
+        from autolinkingbrain.mem0_fetch import fetch_channel_rows
+
+        rows = fetch_channel_rows(project_user_id, top_k=1000, db=self.db)
+        log_mem0(
+            "read",
+            "mcp.checkProjectHealth.get_all",
+            user_id=project_user_id,
+            top_k=1000,
+            rows=len(rows),
+            purpose="indexing_mark_scan",
+        )
         candidates = [
             r
             for r in rows

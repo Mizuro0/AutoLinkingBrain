@@ -16,6 +16,8 @@ def _isolate_chroma(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MEM0_CHROMA_PATH", str(tmp_path / "chroma_test"))
     monkeypatch.setenv("MEM0_TELEMETRY", "false")
     monkeypatch.setenv("MEM0_PRIVACY_FILTER", "1")
+    monkeypatch.setenv("MEM0_INSTALL_SYNC_DISCOVERED", "0")
+    monkeypatch.setenv("CODEGRAPH_AUTO_DISCOVER", "0")
 
 
 @pytest.fixture

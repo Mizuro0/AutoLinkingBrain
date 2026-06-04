@@ -4,11 +4,16 @@
 
 ```powershell
 cd d:\mcp_server
-python brain.py onboard --host cursor --mcp-scope global --profile standard
+copy config\local\install.yaml.example config\local\install.yaml
+# В install.yaml для своей машины: profile: full
+python brain.py onboard
 python brain.py doctor
 ```
 
-Профили: `minimal` (только Brain), `standard` (+ QwenReviewer), `full` (+ ArchitectureCurator).
+Профили MCP: `minimal` (Brain), `standard` (+ QwenReviewer, **дефолт репо**), `full` (+ ArchitectureCurator).
+
+Личный профиль — **не в git**: `config/local/install.yaml` (см. [config/local/README.md](../config/local/README.md)).  
+`python brain.py mcp install` и `sync-agent` читают этот файл, если нет флага `--profile`.
 
 ## 2. MCP scope
 
@@ -42,11 +47,19 @@ python brain.py gc audit --project-root D:\codes\backend
 python brain.py gc purge --confirm-token TOKEN --apply
 ```
 
-## 5. Architecture (profile full)
+## 5. Architecture по фичам (profile full)
 
-MCP **ArchitectureCurator**: `getArchitectureDoc`, `updateArchitectureSection`.
+Включите `profile: full` в `config/local/install.yaml` (или `python brain.py mcp install --profile full`).
+
+MCP **ArchitectureCurator** + skill **`architecture-by-feature`** + rule `architecture-curator.mdc`.
+
+Цикл на фичу: Brain recall → CodeGraph → `buildArchitectureContext` → `updateArchitectureSection` (одна секция за вызов) → `storeKnowledge`.
 
 Файл: `{project}/docs/ARCHITECTURE.generated.md`
+
+```powershell
+python brain.py sync-agent --force-copy
+```
 
 ## 6. Метрики
 

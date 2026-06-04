@@ -30,10 +30,19 @@ except ImportError as e:
 
 load_config()
 
-_INSTRUCTIONS = """ArchitectureCurator — incremental docs/ARCHITECTURE.generated.md (one section per call).
+_INSTRUCTIONS = """ArchitectureCurator — local Ollama (Qwen) module architect + handoff for the host agent.
 
-Pair with AutoLinkingBrain for Mem0 facts and CodeGraph for structure.
-Tools: getArchitectureDoc, updateArchitectureSection, getArchitectureBudget, refreshArchitectureFromDiff.
+Workflow (one module at a time — small model):
+1. getArchitectProtocol
+2. planArchitectureRun { modules: ["feature-a", "feature-b"] }
+3. Per module: Brain recall + CodeGraph → runArchitectModule { module, context, section_focus }
+4. getArchitectHandoff → READ artifact_path (docs/architecture/modules/<slug>.md)
+5. recordAgentArchitectureReview { agent_notes, agent_status, resolved_questions }
+6. rollupArchitectureModule when done; storeKnowledge (Brain)
+
+Signals: .brain/architecture/handoff.json (signal=module_ready).
+Do NOT loop runArchitectModule for all modules in one turn — process sequentially with agent review.
+Legacy: updateArchitectureSection, getArchitectureDoc.
 """
 
 mcp = FastMCP("ArchitectureCurator", instructions=_INSTRUCTIONS)

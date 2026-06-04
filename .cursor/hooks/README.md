@@ -5,11 +5,11 @@ Installed globally into `%USERPROFILE%\.cursor\hooks.json` by `python brain.py i
 | Script | Event | Role |
 |--------|-------|------|
 | `session_mem0_bootstrap.py` | `sessionStart` | Inject recent Mem0 facts into `additional_context` |
-| `mem0_autolog_after_response.py` | `afterAgentResponse` | Distill agent reply → Mem0 (`infer=False`) |
-| `mem0_autolog_post_tool.py` | `postToolUse` | Log read/edit/search tool use as one-line facts |
+| `mem0_autolog_after_response.py` | `afterAgentResponse` | Session archive → `.cursor/autolog.db` (default); optional Mem0 |
+| `mem0_autolog_post_tool.py` | `postToolUse` | Tool-use lines → autolog SQLite (`MEM0_TOOLLOG=0` after install) |
 
-All hooks import from `autolinkingbrain` (privacy, slug, settings). They use the same Chroma path as MCP (`MEM0_CHROMA_PATH`).
+Hooks import from `autolinkingbrain` (privacy, slug, autolog_store). Curated memory is **`storeKnowledge`**, not autolog.
 
-Disable autolog: `MEM0_AUTOLOG=0` in hook env. Disable session bootstrap: `MEM0_SESSION_BOOTSTRAP=0`.
+Disable autolog: `MEM0_AUTOLOG=0`. Ollama distill: `MEM0_AUTOLOG_USE_OLLAMA=1` (default **off**). Disable session bootstrap: `MEM0_SESSION_BOOTSTRAP=0`.
 
 Template: [config/examples/hooks.json.example](../config/examples/hooks.json.example).
