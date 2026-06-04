@@ -24,7 +24,11 @@ When **AutoLinkingBrain** MCP is available, persist knowledge **in the same sess
 | Hard debugging / non-obvious root cause | bugfix | symptoms, cause, fix — `scope: both` if reusable |
 | Cross-project pattern (ES, SQL, JVM, caching, etc.) | architecture | `scope: global` or `both` — write **expanded** (constraints → what worked) |
 
-One fact per call. **Project-local:** include a **file path** in `text` or `context_path`. **Global patterns:** path optional; prefer concrete rules (settings, query shape, index mapping).
+One fact per call. **Never call storeKnowledge in parallel** — wait for the previous result (same MCP process; embed+Chroma). Prefer **`scope: project`**; use `both` only when the lesson must also land in `global_skills`.
+
+**Do not batch several storeKnowledge in one agent turn**: writes go straight to Chroma (no server-side queue), and Cursor may close the MCP STDIO transport on timeout while Brain is still working → `Connection closed` / `transport_closed` and a dead AutoLinkingBrain until Reload. Pattern: one call → read the tool result → next call if needed. Never force-kill `brain_server` mid-write — it can corrupt the Chroma index (recovery: `scripts/_chroma_recover.py`).
+
+**Project-local:** include a **file path** in `text` or `context_path`. **Global patterns:** path optional; prefer concrete rules (settings, query shape, index mapping).
 
 ## global_skills (`scope: global` | `both`)
 
@@ -55,4 +59,4 @@ tool: storeKnowledge
 { text: "Elasticsearch: use nested for X; avoid scripting on Y; reindex alias Z …", tech: "elasticsearch", scenario: "architecture", scope: "global" }
 ```
 
-If MCP errors: note briefly, continue work — retry store on next stable turn.
+If MCP errors (`Connection closed`, `Not connected`): Reload MCP, then **one** short `storeKnowledge` (`scope: project`); do not fire 2–3 in parallel to “catch up”.

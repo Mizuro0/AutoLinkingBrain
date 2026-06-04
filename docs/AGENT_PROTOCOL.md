@@ -52,6 +52,24 @@ English only via MCP tools:
 - `registerDependency` — cross-repo links
 - `markIndexingComplete` — only this tool counts as indexed
 
+### storeKnowledge concurrency (MCP stability)
+
+The Brain MCP server is a **single STDIO process** sharing one Chroma collection. Each `storeKnowledge` runs **Ollama embed + Chroma insert** (blocking).
+
+| Do | Don't |
+|----|-------|
+| One `storeKnowledge`, wait for OK | 2–3 `storeKnowledge` in parallel in one agent turn |
+| `scope: project` for task-local facts | `scope: both` unless the fact belongs in `global_skills` too |
+| Short body; one fact per call | Batch many facts in one turn without waiting |
+
+Writes go **directly to Chroma** (no server-side serialization) — one `storeKnowledge` at a time, wait for OK before the next.
+
+**Do not batch several storeKnowledge in one agent turn** — Cursor may close MCP STDIO on client timeout while Brain is still writing (`Connection closed` / `transport_closed`). One call → wait for tool result → next call.
+
+**Never force-kill `brain_server` during a write** (`Inserting 1 vectors`): it can corrupt the ChromaDB HNSW vector index, after which every insert crashes the process with a native `access violation` (looks like `Connection closed`). The SQLite store stays intact (reads keep working via `MEM0_FETCH_SQLITE=1`); recover the index losslessly with `python scripts/_chroma_recover.py extract` then `rebuild`. ChromaDB is not safe for concurrent writes from multiple processes — avoid heavy parallel writes from many Cursor windows.
+
+**Diagnostics:** full debug log `.cursor\mcp_full.log`. Tail: `Get-Content D:\mcp_server\.cursor\mcp_full.log -Wait -Tail 30`. Inspect the vector store: `python scripts/_chroma_inspect.py`.
+
 Delivered **globally** (no per-project `.cursor/rules/` required):
 
 - MCP server `instructions` on every AutoLinkingBrain connection
