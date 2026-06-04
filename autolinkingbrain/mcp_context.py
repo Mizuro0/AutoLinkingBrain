@@ -10,7 +10,13 @@ from datetime import datetime, timezone
 from mcp.server.fastmcp.server import Context
 from mem0 import Memory
 
-from autolinkingbrain.indexing_coverage import analyze_indexing_coverage, load_topology_memory_texts
+from autolinkingbrain.indexing_coverage import (
+    analyze_indexing_coverage,
+    filter_incoming_dependencies,
+    is_retrievable_fact,
+    load_topology_memory_texts,
+    retrieve_facts_only_enabled,
+)
 from autolinkingbrain.mcp_constants import (
     GLOBAL_ID,
     INDEXING_MARK_TOKEN,
@@ -60,12 +66,12 @@ class McpContext:
             if paths:
                 self.mcp_roots_paths_cache = paths
                 try:
-                    from autolinkingbrain.cursor_agent import sync_project_rules_for_workspace_roots
+                    from autolinkingbrain.cursor_agent import sync_global_agent_assets
 
-                    sync_project_rules_for_workspace_roots(paths)
+                    sync_global_agent_assets(force=False)
                 except Exception:
                     logging.getLogger(__name__).debug(
-                        "cursor project rules sync from MCP roots failed",
+                        "cursor global agent assets sync from MCP roots failed",
                         exc_info=True,
                     )
         except Exception:
@@ -187,26 +193,37 @@ class McpContext:
     def build_check_project_health_body(self, project_id: str, project_user_id: str) -> str:
         mark_text = self.latest_indexing_mark_memory(project_user_id)
         health_lines = self.health_status_block(mark_text)
-        incoming_rows = self.mem_search(
-            f"depends on [{project_id}]",
-            TOPOLOGY_ID,
-            top_k=int(os.environ.get("MCP_HEALTH_INCOMING_TOP_K", "24")),
-            threshold=float(os.environ.get("MCP_HEALTH_INCOMING_THRESHOLD", "0.12")),
-            hybrid=True,
-        )
+        topology_texts = load_topology_memory_texts(self.db)
+        incoming_texts = filter_incoming_dependencies(topology_texts, project_id)
+        if not incoming_texts and os.environ.get("MCP_HEALTH_INCOMING_SEMANTIC", "0").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+        ):
+            incoming_rows = self.mem_search(
+                f"depends on [{project_id}]",
+                TOPOLOGY_ID,
+                top_k=int(os.environ.get("MCP_HEALTH_INCOMING_TOP_K", "24")),
+                threshold=float(os.environ.get("MCP_HEALTH_INCOMING_THRESHOLD", "0.12")),
+                hybrid=True,
+            )
+            incoming_texts = filter_incoming_dependencies(
+                [str(m.get("memory") or "") for m in incoming_rows],
+                project_id,
+            )
         log_mem0(
             "read",
-            "mcp.checkProjectHealth.search",
+            "mcp.checkProjectHealth.incoming",
             user_id=TOPOLOGY_ID,
-            query=f"depends on [{project_id}]",
-            hits=len(incoming_rows),
-            hybrid=True,
+            project=project_id,
+            hits=len(incoming_texts),
+            exact=True,
         )
         max_links = int(os.environ.get("MCP_HEALTH_MAX_INCOMING", "20"))
-        slice_rows = incoming_rows[:max_links]
-        links = "\n".join([f"• {m.get('memory', '')}" for m in slice_rows]) if slice_rows else "No incoming links."
-        if len(incoming_rows) > max_links:
-            links += f"\n… and {len(incoming_rows) - max_links} more (raise MCP_HEALTH_MAX_INCOMING or use retrieveChain)."
+        slice_rows = incoming_texts[:max_links]
+        links = "\n".join([f"• {t}" for t in slice_rows]) if slice_rows else "No incoming links."
+        if len(incoming_texts) > max_links:
+            links += f"\n… and {len(incoming_texts) - max_links} more (raise MCP_HEALTH_MAX_INCOMING)."
         try:
             raw = self.db.get_all(filters={"user_id": project_user_id}, top_k=1000)
             project_texts = [
@@ -215,7 +232,6 @@ class McpContext:
             ]
         except Exception:
             project_texts = []
-        topology_texts = load_topology_memory_texts(self.db)
         coverage = analyze_indexing_coverage(project_texts, topology_texts, project_id)
         analysis_block = self._analysis_status_block(project_id, project_root=os.getcwd())
         return (
@@ -250,6 +266,7 @@ class McpContext:
         top_k_per_scope: int = 6,
         per_memory_chars: int = 900,
         threshold: float | None = None,
+        facts_only: bool | None = None,
     ) -> str:
         current_project = project_id or self.get_project_id()
         search_ids = [f"project_{current_project}"]
@@ -263,9 +280,13 @@ class McpContext:
             else float(os.environ.get("MCP_RETRIEVE_THRESHOLD", "0.15"))
         )
         thr = max(0.05, min(thr, 0.5))
+        use_facts_only = retrieve_facts_only_enabled() if facts_only is None else facts_only
+        fetch_mult = max(2, min(int(os.environ.get("MCP_RETRIEVE_FETCH_MULT", "4")), 8))
         res: list[str] = []
+        filtered_total = 0
         for u_id in search_ids:
-            rows = self.mem_search(query, u_id, top_k=top_k_per_scope, threshold=thr)
+            fetch_k = top_k_per_scope * fetch_mult if use_facts_only else top_k_per_scope
+            rows = self.mem_search(query, u_id, top_k=fetch_k, threshold=thr)
             log_mem0(
                 "read",
                 "mcp.retrieveChain.search",
@@ -273,17 +294,38 @@ class McpContext:
                 query_preview=(query[:200] + "…") if len(query) > 200 else query,
                 hits=len(rows),
                 hybrid=hybrid_search_enabled(),
+                facts_only=use_facts_only,
             )
             if not rows:
                 continue
             lines: list[str] = []
             for m in rows:
                 txt = (m.get("memory") or "").strip()
+                if use_facts_only and not is_retrievable_fact(txt):
+                    filtered_total += 1
+                    continue
                 if per_memory_chars > 0 and len(txt) > per_memory_chars:
                     txt = txt[: per_memory_chars - 12] + "… [cut]"
                 lines.append(txt)
+                if len(lines) >= top_k_per_scope:
+                    break
+            if not lines:
+                continue
             res.append(f"=== FROM {u_id.upper()} ===\n" + "\n".join(lines))
-        return "\n\n".join(res) if res else "Ничего не найдено."
+        if res:
+            if filtered_total and use_facts_only:
+                res.append(
+                    f"=== RECALL NOTE ===\n"
+                    f"Excluded {filtered_total} autolog/noise rows (MCP_RETRIEVE_FACTS_ONLY=1)."
+                )
+            return "\n\n".join(res)
+        if use_facts_only:
+            return (
+                "No curated facts found for this query.\n"
+                "Next: runProjectAnalysis, storeKnowledge with file paths, or retrieveChain with "
+                "facts_only=false. Use CodeGraph for symbols; grep only as last resort."
+            )
+        return "Ничего не найдено."
 
     def latest_indexing_mark_memory(self, project_user_id: str) -> str | None:
         try:

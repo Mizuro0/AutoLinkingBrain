@@ -12,6 +12,7 @@ AutoLinkingBrain — one launcher, minimal commands.
   python brain.py onboard     one-command setup (config + MCP + hooks)
   python brain.py doctor      diagnostics
   python brain.py gc audit    knowledge GC dry-run
+  python brain.py migrate-autolog --dry-run   Chroma autolog → .cursor/autolog.db
   python brain.py analyze auto  project analysis batch
 
 Double-click start.bat (Windows) or ./start.sh (Unix) — setup + viewer.
@@ -186,9 +187,17 @@ def cmd_viewer_with_setup(args: argparse.Namespace) -> int:
 
 def cmd_sync_agent(args: argparse.Namespace) -> int:
     sys.path.insert(0, str(ROOT))
-    from autolinkingbrain.cursor_agent import sync_cursor_agent_assets
+    from autolinkingbrain.cursor_agent import (
+        sync_agent_all_repos_enabled,
+        sync_cursor_agent_assets,
+    )
 
-    written = sync_cursor_agent_assets(ROOT, force=args.force_copy, all_discovered_repos=True)
+    all_repos = bool(getattr(args, "all_repos", False)) or sync_agent_all_repos_enabled()
+    written = sync_cursor_agent_assets(
+        ROOT,
+        force=args.force_copy,
+        all_discovered_repos=all_repos,
+    )
     if written:
         for p in written:
             print(p)
@@ -251,8 +260,13 @@ def main() -> int:
     p_stats.add_argument("--days", type=float, default=7.0)
     p_stats.add_argument("--json", action="store_true")
 
-    p_sync = sub.add_parser("sync-agent", help="Sync skill + rules")
+    p_sync = sub.add_parser("sync-agent", help="Sync global skill + rules to ~/.cursor/ (default)")
     p_sync.add_argument("--force-copy", action="store_true")
+    p_sync.add_argument(
+        "--all-repos",
+        action="store_true",
+        help="Also sync project rules to discovered repos (requires MEM0_SYNC_PROJECT_RULES=1)",
+    )
 
     sys.path.insert(0, str(ROOT))
     from autolinkingbrain.brain_cli import add_cli_parsers

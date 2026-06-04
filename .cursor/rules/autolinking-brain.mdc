@@ -5,35 +5,58 @@ description: >-
 alwaysApply: true
 ---
 
-# AutoLinkingBrain — automated protocol
+# AutoLinkingBrain — brain before grep
 
-MCP server: **`user-AutoLinkingBrain`** (global scope). Skill: **`autolinking-brain-mcp`**.
+**Global rule** — installed to `~/.cursor/rules/` by `python brain.py onboard|install|sync-agent`. Applies to every workspace where AutoLinkingBrain MCP is configured. No per-project setup required.
 
-## Session loop (every non-trivial task)
+MCP server: **`user-AutoLinkingBrain`**. Skill: **`autolinking-brain-mcp`**.
 
-1. **First MCP call:** `checkProjectHealth` `{}` (or `sessionContextPack` if you need recall too) — **before** grep/read/search for repo questions.
-2. If `ANALYSIS STATUS: required_*` and `AUTO_RUN: yes` → **`runProjectAnalysis`** immediately (no user prompt). One batch per turn unless user asked for full scan.
-3. Before changing shared APIs/contracts → **`retrieveChain`** with `linked_projects`.
-4. **After** architecture decisions, bugfixes, API changes, or finishing a meaningful subtask → **`storeKnowledge`** (English, `tech`, `scenario`, `context_path` in monorepo).
-5. Reindex when `REINDEX_PROTOCOL: required` → `registerDependency` + `storeKnowledge` + `markIndexingComplete`.
+## Session start (every non-trivial task)
 
-**Chat alone does not populate Mem0.** Hooks write autolog only. Structured facts require **`storeKnowledge`**.
+1. **First MCP call:** `sessionContextPack` with a task-specific `recall_query` (health + curated facts in one round-trip).
+   - Use `checkProjectHealth` alone only when you do not need recall yet.
+2. If `ANALYSIS STATUS: required_*` and `AUTO_RUN: yes` → **`runProjectAnalysis`** immediately (one batch per turn until `next=done` or user stops you).
+3. **Do not grep/read/glob** for architecture, decisions, contracts, or “how does X work” until Brain + CodeGraph return nothing useful.
+4. **CodeGraph** (`user-codegraph`) for symbols, callers, trace, impact — before opening random files.
+5. **Feature / module architecture doc** → skill **`architecture-by-feature`**, MCP **`user-ArchitectureCurator`** (profile `full`): recall + CodeGraph first, then section updates; always **`storeKnowledge`** after.
+6. **grep/read** only for: exact line edits, confirming a single detail Brain/CodeGraph missed, or when recall says “No curated facts found”.
+
+## During work
+
+- Before shared API/contract changes → **`retrieveChain`** with `linked_projects` (default `facts_only=true`).
+- After decisions, bugfixes, API changes, subtask done → **`storeKnowledge`** (English, `tech`, `scenario`, `context_path` in monorepo).
+- Reindex when `REINDEX_PROTOCOL: required` → `registerDependency` + `storeKnowledge` + `markIndexingComplete`.
+
+**Hooks = autolog (noisy). Curated memory = `storeKnowledge` + `runProjectAnalysis`.**
 
 ## Writes
 
-- Body + dependency reasons: **English** only.
-- Monorepo: always pass **`context_path`** (file/subfolder path) → correct `project_<slug>`.
-- `scope`: `project` for local facts; `both` for reusable patterns.
+- English body; include **file path** in text when possible.
+- Monorepo: **`context_path`** → correct `project_<slug>`.
+- `scope`: `project` local; `both` reusable patterns.
 
-## Reads vs structure
+## Reads
 
-- **AutoLinkingBrain** — memory, health, contracts, GC, analysis.
-- **CodeGraph** — symbols/trace/impact when `.codegraph/` exists (before blind file scans).
+| Question | Tool |
+|----------|------|
+| Health, coverage, incoming deps | `sessionContextPack` / `checkProjectHealth` |
+| Prior decisions, architecture | `retrieveChain` / recall in pack |
+| Where in code / who calls X | CodeGraph |
+| Cross-repo contracts | `retrieveChain` + `linked_projects` |
+| Feature arch document | ArchitectureCurator + `storeKnowledge` |
+
+## MCP profiles (global)
+
+| Profile | Servers |
+|---------|---------|
+| `minimal` | AutoLinkingBrain |
+| `standard` | + QwenReviewer |
+| `full` | + ArchitectureCurator |
 
 ## Do not skip
 
-- Do not claim health was read without calling MCP.
-- Do not use chat/autolog instead of `markIndexingComplete`.
-- Do not batch >3 `storeKnowledge` in parallel if MCP connection drops — retry on `Connection closed`.
+- Do not claim health/recall without MCP.
+- Do not use autolog rows as architecture truth.
+- Do not batch >3 `storeKnowledge` in parallel — retry on `Connection closed`.
 
 See skill `autolinking-brain-mcp` and `docs/AGENT_PROTOCOL.md`.

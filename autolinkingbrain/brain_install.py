@@ -25,7 +25,21 @@ except ImportError:
 
 def _mem0_env() -> dict[str, str]:
     """Env vars merged into MCP server and hook subprocesses."""
-    return {"MEM0_TELEMETRY": "false"}
+    return {
+        "MEM0_TELEMETRY": "false",
+        "MEM0_PRIVACY_FILTER": "1",
+        "MEM0_PRIVACY_BLOCK": "1",
+        "MEM0_AUTOLOG_BACKEND": "sqlite",
+    }
+
+
+def install_sync_discovered() -> bool:
+    """When true, install/merge syncs rules to all CodeGraph-discovered repos (slow). Default off."""
+    return os.environ.get("MEM0_INSTALL_SYNC_DISCOVERED", "0").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
 
 def _backup(path: Path) -> None:
@@ -205,7 +219,7 @@ def _merge_hooks(py: Path) -> Path:
     hooks["afterAgentResponse"] = [
         {
             "command": f'"{py}" "{autolog}"',
-            "timeout": 180,
+            "timeout": 60,
             "env": {
                 **mem0_env,
                 "MEM0_AUTOLOG": "1",
@@ -214,6 +228,7 @@ def _merge_hooks(py: Path) -> Path:
                 "MEM0_AUTOLOG_USE_OLLAMA": "0",
                 "MEM0_AUTOLOG_OLLAMA_FALLBACK": "0",
                 "MEM0_AUTOLOG_TARGET": "project",
+                "MEM0_AUTOLOG_BACKEND": "sqlite",
             },
         }
     ] + strip_ours(list(hooks.get("afterAgentResponse") or []))
@@ -221,7 +236,12 @@ def _merge_hooks(py: Path) -> Path:
         {
             "command": f'"{py}" "{post_tool}"',
             "timeout": 45,
-            "env": {**mem0_env, "MEM0_TOOLLOG": "1", "MEM0_TOOLLOG_TARGET": "project"},
+            "env": {
+                **mem0_env,
+                "MEM0_TOOLLOG": "0",
+                "MEM0_TOOLLOG_TARGET": "project",
+                "MEM0_AUTOLOG_BACKEND": "sqlite",
+            },
         }
     ] + strip_ours(list(hooks.get("postToolUse") or []))
 
@@ -354,7 +374,7 @@ def run_onboard(
         if not _hooks_configured(py):
             p = _merge_hooks(py)
             print(f"  hooks -> {p}")
-        sync_cursor_agent_assets(ROOT, all_discovered_repos=True)
+        sync_cursor_agent_assets(ROOT, all_discovered_repos=install_sync_discovered())
         agents_tpl = ROOT / "config" / "templates" / "AGENTS.md"
         if agents_tpl.is_file() and project_root:
             dest = Path(project_root) / "AGENTS.md"
@@ -407,6 +427,23 @@ def run_doctor(*, project_root: str = "", as_json: bool = False) -> dict:
                 checks.append({"name": "arch_curator", "status": "warn", "detail": "profile full but Arch MCP missing"})
     hooks_ok = _hooks_configured(py) if py.is_file() else False
     checks.append({"name": "hooks", "status": "ok" if hooks_ok else "warn", "detail": str(Path.home() / ".cursor" / "hooks.json")})
+    try:
+        from autolinkingbrain.cursor_agent import agent_assets_configured, global_rules_dir
+
+        assets_ok = agent_assets_configured()
+        checks.append({
+            "name": "agent_assets",
+            "status": "ok" if assets_ok else "warn",
+            "detail": f"skills+rules under {Path.home() / '.cursor'}",
+        })
+        if not assets_ok:
+            checks.append({
+                "name": "global_rules",
+                "status": "warn",
+                "detail": str(global_rules_dir()),
+            })
+    except Exception:
+        pass
     fails = [c for c in checks if c["status"] == "fail"]
     overall = "fail" if fails else "ok"
     return {"overall": overall, "checks": checks}
@@ -428,7 +465,7 @@ def merge_cursor_config(
     if not skip_hooks:
         written.append(_merge_hooks(interpreter))
     if not skip_agent_assets:
-        written.extend(sync_cursor_agent_assets(ROOT, all_discovered_repos=True))
+        written.extend(sync_cursor_agent_assets(ROOT, all_discovered_repos=install_sync_discovered()))
     return written
 
 
@@ -473,8 +510,8 @@ def run_install(
         p = _merge_hooks(py)
         print(f"  -> {p}")
 
-    print("==> Cursor agent skill + rules")
-    synced = sync_cursor_agent_assets(ROOT, all_discovered_repos=True)
+    print("==> Cursor agent skill + global rules (~/.cursor/)")
+    synced = sync_cursor_agent_assets(ROOT, all_discovered_repos=install_sync_discovered())
     if synced:
         for p in synced:
             print(f"  -> {p}")
@@ -525,8 +562,8 @@ def run_setup(
     else:
         print("==> hooks.json OK")
 
-    print("==> Cursor agent skill + rules")
-    synced = sync_cursor_agent_assets(ROOT, all_discovered_repos=True)
+    print("==> Cursor agent skill + global rules (~/.cursor/)")
+    synced = sync_cursor_agent_assets(ROOT, all_discovered_repos=install_sync_discovered())
     for p in synced:
         print(f"  -> {p}")
     if not synced:

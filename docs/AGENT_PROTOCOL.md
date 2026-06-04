@@ -11,12 +11,20 @@ For repo overview, stack, architecture, onboarding:
 3. If `ANALYSIS STATUS` is `required_full` or `required_incremental` and `AUTO_RUN: yes` → call **`runProjectAnalysis`** without asking the user.
 4. Then **`sessionContextPack`** / **`retrieveChain`**, then local files.
 
-## 2. Dual MCP
+## 2. MCP stack
 
-- **CodeGraph** — code structure, symbols, trace, impact (when `.codegraph/` exists).
-- **AutoLinkingBrain** — memory, contracts, indexing, analysis orchestrator.
-- **QwenReviewer** (optional) — diff review.
-- **ArchitectureCurator** (optional, profile full) — `docs/ARCHITECTURE.generated.md`.
+| Server | Role | Install profile |
+|--------|------|-----------------|
+| **AutoLinkingBrain** | Memory, contracts, indexing, analysis | `minimal`+ |
+| **CodeGraph** | Symbols, trace, impact (`.codegraph/`) | separate binary |
+| **QwenReviewer** | Local Ollama diff review | `standard`+ |
+| **ArchitectureCurator** | `docs/ARCHITECTURE.generated.md`, per-feature sections | `full` |
+
+```powershell
+python brain.py mcp install --scope global --profile full
+```
+
+**Feature architecture loop:** Brain recall → CodeGraph → `buildArchitectureContext` → `updateArchitectureSection` (one section per call) → `storeKnowledge` → `getArchitectureDoc`. Skill: `architecture-by-feature`.
 
 ## 3. Writes (automated — not optional)
 
@@ -34,7 +42,13 @@ English only via MCP tools:
 - `registerDependency` — cross-repo links
 - `markIndexingComplete` — only this tool counts as indexed
 
-Cursor enforces this via project rules `autolinking-brain.mdc` + `mem0-auto-write.mdc` (`alwaysApply: true`) and skill `autolinking-brain-mcp`. Refresh: `python brain.py sync-agent --force-copy`.
+Delivered **globally** (no per-project `.cursor/rules/` required):
+
+- MCP server `instructions` on every AutoLinkingBrain connection
+- `~/.cursor/skills/` + `~/.cursor/rules/` via `python brain.py onboard|sync-agent`
+- sessionStart hook injects alwaysApply rules (`MEM0_SESSION_PROTOCOL=1`)
+
+Legacy per-repo rules: `MEM0_SYNC_PROJECT_RULES=1` only. Refresh: `python brain.py sync-agent --force-copy`.
 
 ## 4. Knowledge GC
 
@@ -47,10 +61,14 @@ CLI: `python brain.py gc audit|purge|dedupe-exact`
 
 ## 5. MCP server ids (Cursor)
 
-| Scope | Typical id |
-|-------|------------|
-| Global `~/.cursor/mcp.json` | `user-AutoLinkingBrain` |
-| Project `.cursor/mcp.json` | `project-…-AutoLinkingBrain` |
+| Server | Global id |
+|--------|-----------|
+| AutoLinkingBrain | `user-AutoLinkingBrain` |
+| CodeGraph | `user-codegraph` |
+| ArchitectureCurator | `user-ArchitectureCurator` |
+| QwenReviewer | `user-QwenReviewer` |
+
+Project-scoped `.cursor/mcp.json` uses `project-…-<ServerName>` prefixes.
 
 ## 6. Metrics tiers
 
