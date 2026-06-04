@@ -18,9 +18,11 @@
           "MEM0_TELEMETRY": "false",
           "MEM0_AUTOLOG": "1",
           "MEM0_AUTOLOG_STRICT": "1",
-          "MEM0_AUTOLOG_USE_OLLAMA": "1",
-          "MEM0_AUTOLOG_OLLAMA_FALLBACK": "1",
-          "MEM0_AUTOLOG_TARGET": "project"
+          "MEM0_AUTOLOG_USE_OLLAMA": "0",
+          "MEM0_AUTOLOG_OLLAMA_FALLBACK": "0",
+          "MEM0_AUTOLOG_TARGET": "project",
+          "MEM0_AUTOLOG_BACKEND": "sqlite",
+          "_comment": "Do not set MEM0_AUTOLOG_ALLOW_MEM0=1 unless migrating legacy autolog into Chroma"
         }
       }
     ],
@@ -30,8 +32,10 @@
         "timeout": 45,
         "env": {
           "MEM0_TELEMETRY": "false",
-          "MEM0_TOOLLOG": "1",
-          "MEM0_TOOLLOG_TARGET": "project"
+          "MEM0_TOOLLOG": "0",
+          "MEM0_TOOLLOG_TARGET": "project",
+          "MEM0_AUTOLOG_BACKEND": "sqlite",
+          "_comment": "Do not set MEM0_AUTOLOG_ALLOW_MEM0=1 unless migrating legacy autolog into Chroma"
         }
       }
     ]

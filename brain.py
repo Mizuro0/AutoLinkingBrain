@@ -9,6 +9,13 @@ AutoLinkingBrain — one launcher, minimal commands.
   python brain.py install     venv + MCP + hooks (no PowerShell)
   python brain.py setup       idempotent bootstrap (start.bat uses this)
   python brain.py stats       metrics / ROI estimate (offline, no agent tokens)
+  python brain.py onboard     one-command setup (config + MCP + hooks)
+  python brain.py doctor      diagnostics
+  python brain.py gc audit    knowledge GC dry-run
+  python brain.py gc purge-indexing --apply   remove Indexed source noise
+  python brain.py migrate-autolog --dry-run   Chroma autolog → .cursor/autolog.db
+  python brain.py analyze sync     index all discovered repos (set-and-forget)
+  python brain.py analyze auto     project analysis batch (single repo)
 
 Double-click start.bat (Windows) or ./start.sh (Unix) — setup + viewer.
 """
@@ -23,6 +30,35 @@ import webbrowser
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+
+# Avoid chromadb native client on Windows for read-heavy CLI (stats, gc, migrate).
+os.environ.setdefault("MEM0_FETCH_SQLITE", "1")
+
+# CLI commands that import mem0/chromadb — re-run under .venv when user calls system `python`.
+_MEM0_CLI_COMMANDS = frozenset({"gc", "migrate-autolog", "health", "context", "analyze"})
+
+
+def _venv_python() -> Path:
+    name = "Scripts/python.exe" if sys.platform == "win32" else "bin/python"
+    return ROOT / ".venv" / name
+
+
+def _reexec_in_venv_if_needed(command: str | None) -> None:
+    if not command or command not in _MEM0_CLI_COMMANDS:
+        return
+    if os.environ.get("BRAIN_SKIP_VENV_REEXEC", "").strip():
+        return
+    venv_py = _venv_python()
+    if not venv_py.is_file():
+        return
+    try:
+        if Path(sys.executable).resolve() == venv_py.resolve():
+            return
+    except OSError:
+        pass
+    os.environ["BRAIN_SKIP_VENV_REEXEC"] = "1"
+    script = str(ROOT / "brain.py")
+    os.execv(str(venv_py), [str(venv_py), script, *sys.argv[1:]])
 
 
 def _viewer_host() -> str:
@@ -182,14 +218,29 @@ def cmd_viewer_with_setup(args: argparse.Namespace) -> int:
 
 def cmd_sync_agent(args: argparse.Namespace) -> int:
     sys.path.insert(0, str(ROOT))
-    from autolinkingbrain.cursor_agent import sync_cursor_agent_assets
+    from autolinkingbrain.cursor_agent import (
+        sync_agent_all_repos_enabled,
+        sync_cursor_agent_assets,
+    )
+    from autolinkingbrain.local_install import load_local_install
 
-    written = sync_cursor_agent_assets(ROOT, force=args.force_copy, all_discovered_repos=True)
+    all_repos = bool(getattr(args, "all_repos", False)) or sync_agent_all_repos_enabled()
+    written = sync_cursor_agent_assets(
+        ROOT,
+        force=args.force_copy,
+        all_discovered_repos=all_repos,
+    )
     if written:
         for p in written:
             print(p)
     else:
         print("OK (already up to date)")
+    loc = load_local_install()
+    if loc and loc.sync_mcp_on_agent_sync:
+        from autolinkingbrain.local_install import apply_local_mcp_install
+
+        print("==> MCP refresh (config/local/install.yaml)")
+        apply_local_mcp_install()
     return 0
 
 
@@ -210,64 +261,79 @@ def cmd_stats(args: argparse.Namespace) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="brain",
-        description="AutoLinkingBrain launcher — viewer, status, CodeGraph.",
+        description="AutoLinkingBrain launcher — viewer, status, CodeGraph, onboard, GC, analysis.",
     )
-    parser.add_argument(
-        "command",
-        nargs="?",
-        default="start",
-        choices=("start", "status", "codegraph", "install", "setup", "stats", "sync-agent"),
-        help="start=setup+viewer, setup=bootstrap, sync-agent=skill+rules to all repos, stats=metrics",
+    sub = parser.add_subparsers(dest="command")
+
+    p_start = sub.add_parser("start", help="setup+viewer (default)")
+    p_start.add_argument("--no-browser", action="store_true")
+    p_start.add_argument("--skip-setup", action="store_true")
+
+    sub.add_parser("status", help="Health check")
+
+    p_cg = sub.add_parser("codegraph", help="CodeGraph index")
+    p_cg.add_argument("--list", action="store_true")
+    p_cg.add_argument("--status", dest="status_only", action="store_true")
+    p_cg.add_argument("--force", action="store_true")
+    p_cg.add_argument("--workspace", default="")
+    p_cg.add_argument("--no-auto", action="store_true")
+    p_cg.add_argument("--quiet", action="store_true")
+    p_cg.add_argument("paths", nargs="*")
+
+    p_inst = sub.add_parser("install", help="venv + MCP + hooks")
+    p_inst.add_argument("--skip-venv", action="store_true")
+    p_inst.add_argument("--skip-mcp", action="store_true")
+    p_inst.add_argument("--skip-hooks", action="store_true")
+    p_inst.add_argument("--skip-ollama", action="store_true")
+    p_inst.add_argument("--pull-models", action="store_true")
+    p_inst.add_argument("--with-codegraph", action="store_true")
+
+    p_setup = sub.add_parser("setup", help="Idempotent bootstrap")
+    p_setup.add_argument("--no-codegraph", action="store_true")
+    p_setup.add_argument("--no-pull-models", action="store_true")
+    p_setup.add_argument("--no-codegraph-init", action="store_true")
+    p_setup.add_argument("--force-pip", action="store_true")
+
+    p_stats = sub.add_parser("stats", help="Metrics / ROI")
+    p_stats.add_argument("--days", type=float, default=7.0)
+    p_stats.add_argument("--json", action="store_true")
+
+    p_sync = sub.add_parser("sync-agent", help="Sync global skill + rules to ~/.cursor/ (default)")
+    p_sync.add_argument("--force-copy", action="store_true")
+    p_sync.add_argument(
+        "--all-repos",
+        action="store_true",
+        help="Also sync project rules to discovered repos (requires MEM0_SYNC_PROJECT_RULES=1)",
     )
 
-    p_stats = parser.add_argument_group("stats options (with command stats)")
-    p_stats.add_argument("--days", type=float, default=7.0, help="Lookback window in days (default 7)")
-    p_stats.add_argument("--json", action="store_true", help="JSON output for CI/scripts")
+    sys.path.insert(0, str(ROOT))
+    from autolinkingbrain.brain_cli import add_cli_parsers
 
-    p_setup = parser.add_argument_group("setup options (with command setup)")
-    p_setup.add_argument("--no-codegraph", action="store_true", help="Skip codegraph MCP entry")
-    p_setup.add_argument("--no-pull-models", action="store_true", help="Skip ollama pull")
-    p_setup.add_argument("--no-codegraph-init", action="store_true", help="Skip codegraph init for missing indexes")
-    p_setup.add_argument("--force-pip", action="store_true", help="Re-run pip install")
-
-    p_inst = parser.add_argument_group("install options (with command install)")
-    p_inst.add_argument("--skip-venv", action="store_true", help="Skip venv/pip")
-    p_inst.add_argument("--skip-mcp", action="store_true", help="Skip mcp.json merge")
-    p_inst.add_argument("--skip-hooks", action="store_true", help="Skip hooks.json merge")
-    p_inst.add_argument("--skip-ollama", action="store_true", help="Skip Ollama check")
-    p_inst.add_argument("--pull-models", action="store_true", help="ollama pull llama3.2 + nomic-embed-text")
-    p_inst.add_argument("--with-codegraph", action="store_true", help="Add codegraph MCP entry if on PATH")
-
-    p_sync = parser.add_argument_group("sync-agent options (with command sync-agent)")
-    p_sync.add_argument("--force-copy", action="store_true", help="Overwrite skill/rules even when up to date")
-
-    p_cg = parser.add_argument_group("codegraph options (with command codegraph)")
-    p_cg.add_argument("--list", action="store_true", help="List discovered repos only")
-    p_cg.add_argument("--status", dest="status_only", action="store_true", help="CodeGraph status per repo")
-    p_cg.add_argument("--force", action="store_true", help="Re-index even if .codegraph exists")
-    p_cg.add_argument("--workspace", default="", help="Monorepo root (or CODEGRAPH_WORKSPACE env)")
-    p_cg.add_argument("--no-auto", action="store_true", help="Disable auto-discovery")
-    p_cg.add_argument("--quiet", action="store_true", help="Less output")
-    p_cg.add_argument("paths", nargs="*", help="Extra repo paths")
-
-    parser.add_argument("--no-browser", action="store_true", help="With start: do not open browser")
-    parser.add_argument("--skip-setup", action="store_true", help="With start: skip bootstrap, viewer only")
+    add_cli_parsers(sub)
 
     args = parser.parse_args()
+    cmd = args.command
+    _reexec_in_venv_if_needed(cmd)
+    if not cmd:
+        ns = argparse.Namespace(no_browser=False, skip_setup=False)
+        return cmd_viewer_with_setup(ns)
 
-    if args.command == "start":
+    if hasattr(args, "handler"):
+        return args.handler(args)
+
+    if cmd == "start":
         return cmd_viewer_with_setup(args)
-    if args.command == "status":
+    if cmd == "status":
         return cmd_status(args)
-    if args.command == "codegraph":
+    if cmd == "codegraph":
         return cmd_codegraph(args)
-    if args.command == "install":
+    if cmd == "install":
         return cmd_install(args)
-    if args.command == "setup":
+    if cmd == "setup":
         return cmd_setup(args)
-    if args.command == "sync-agent":
+    if cmd == "sync-agent":
         return cmd_sync_agent(args)
-    if args.command == "stats":
+    if cmd == "stats":
         return cmd_stats(args)
     return 1
 

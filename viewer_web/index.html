@@ -271,11 +271,31 @@
   }
   #view-tabs a:hover { color: var(--fg); background: rgba(255,255,255,0.04); }
   #view-tabs a.active { color: var(--fg); background: rgba(201,178,122,0.12); }
+
+  #overview-banner {
+    position: fixed;
+    left: 50%; bottom: 36px; transform: translateX(-50%);
+    max-width: min(640px, calc(100vw - 32px));
+    padding: 9px 14px;
+    background: rgba(35, 31, 26, 0.94);
+    border: 1px solid rgba(201, 178, 122, 0.28);
+    border-radius: 11px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--fg);
+    z-index: 12;
+    display: none;
+    text-align: center;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  }
+  #overview-banner.visible { display: block; }
+  #overview-banner .dim { color: var(--dim); }
 </style>
 </head>
 <body>
 <nav id="view-tabs">
   <a href="/" class="active">Память</a>
+  <a href="/autolog.html">Сессии</a>
   <a href="/ops.html">Ops</a>
 </nav>
 
@@ -313,8 +333,9 @@
 <div id="tooltip"></div>
 <div id="status"><span class="dot"></span><span id="status-text">инициализация…</span></div>
 <div id="hint">
-  <kbd>drag</kbd> панорама · <kbd>scroll</kbd> зум · <kbd>Ops</kbd> метрики · <kbd>Ctrl+F</kbd> поиск · <kbd>Esc</kbd> сброс
+  <kbd>drag</kbd> панорама · <kbd>scroll</kbd> зум · <kbd>Сессии</kbd> autolog · <kbd>Ops</kbd> метрики · <kbd>Ctrl+F</kbd> поиск · <kbd>Esc</kbd> сброс
 </div>
+<div id="overview-banner" role="status"></div>
 
 <script>
 (async function () {
@@ -333,6 +354,11 @@
   const staleOnly = document.getElementById("stale-only");
   const legendChannels = document.getElementById("legend-channels");
   const hits = document.getElementById("hits");
+  const overviewBanner = document.getElementById("overview-banner");
+
+  const LEAF_CANVAS_CAP = 150;
+  const CHANNEL_LEAF_CAP = 100;
+  const TOPIC_LEAF_CAP = 60;
 
   let W = window.innerWidth, H = window.innerHeight;
   function resize() {
@@ -360,6 +386,11 @@
     cam: { x: 0, y: 0, z: 1, tz: 1 },
     drag: null,
     paused: false,
+    byId: new Map(),
+    overviewMode: false,
+    totalLeafCount: 0,
+    expandedChannel: null,
+    expandedTopic: null,
   };
 
   // ---------- helpers ----------
@@ -577,6 +608,148 @@
     return 2.2 + Math.min(4.8, Math.log2(1 + (len || 0)) * 0.85);
   }
 
+  state.totalLeafCount = 0;
+  for (const cl of clusters.values()) state.totalLeafCount += cl.items.length;
+  state.overviewMode = state.totalLeafCount > LEAF_CANVAS_CAP;
+
+  function registerLeaf(item, cl, parentId, topicKey, bx, by, linkKind) {
+    const leafId = item.id || (cl.uid + "_" + Math.random().toString(36).slice(2));
+    if (!item.id) item.id = leafId;
+    const spread = linkKind === "hub-leaf" ? 96 : 54;
+    const leaf = {
+      id: leafId, kind: "leaf", isHub: false,
+      text: item.text || "",
+      userId: cl.uid, scope: cl.scope,
+      color: cl.color, colorRgb: parseColor(cl.color),
+      radius: leafRadius((item.text || "").length),
+      x: bx + (Math.random() - 0.5) * spread,
+      y: by + (Math.random() - 0.5) * spread,
+      vx: 0, vy: 0,
+      cluster: cl.uid, parent: parentId,
+      metadata: item.metadata, topic: topicKey,
+      updated_at: item.updated_at || item.created_at || "",
+      stale: isStaleItem(item),
+      onCanvas: false,
+      linkKind,
+    };
+    state.byId.set(leafId, leaf);
+    if (!cl.leafLayout) cl.leafLayout = [];
+    cl.leafLayout.push({ leafId, parentId, linkKind, leaf });
+    return leaf;
+  }
+
+  function mountLeaves(specs, cap) {
+    let mounted = 0;
+    for (const spec of specs) {
+      if (cap !== undefined && mounted >= cap) break;
+      const leaf = spec.leaf || state.byId.get(spec.leafId);
+      if (!leaf || leaf.onCanvas) continue;
+      leaf.onCanvas = true;
+      state.nodes.push(leaf);
+      state.links.push({ a: spec.parentId, b: leaf.id, w: 1.0, kind: spec.linkKind });
+      mounted++;
+    }
+  }
+
+  function unmountAllLeaves() {
+    state.nodes = state.nodes.filter(n => n.kind !== "leaf");
+    state.links = state.links.filter(l => l.kind !== "topic-leaf" && l.kind !== "hub-leaf");
+    for (const n of state.byId.values()) {
+      if (n.kind === "leaf") n.onCanvas = false;
+    }
+  }
+
+  function visibleLeafCount() {
+    return state.nodes.filter(n => n.kind === "leaf").length;
+  }
+
+  function updateOverviewBanner() {
+    if (!overviewBanner) return;
+    const parts = [];
+    if (payload && payload.truncated) {
+      const cap = payload.limits && payload.limits.per_channel_top_k
+        ? payload.limits.per_channel_top_k
+        : LEAF_CANVAS_CAP;
+      parts.push(`<span class="dim">API: часть каналов обрезана до ${cap} записей — увеличьте MEM0_FETCH_TOP_K.</span>`);
+    }
+    if (state.overviewMode) {
+      const onCanvas = visibleLeafCount();
+      if (onCanvas === 0) {
+        parts.push(
+          `На графе <b>${state.totalLeafCount}</b> фактов — показаны только каналы и подтемы. ` +
+          `Выберите канал в фильтре или найдите факт через <kbd>Ctrl+F</kbd>.`
+        );
+      } else if (state.expandedChannel) {
+        const cl = clusters.get(state.expandedChannel);
+        const total = cl ? cl.items.length : 0;
+        parts.push(
+          `Канал «${escapeHtml(prettyUid(state.expandedChannel))}»: на графе <b>${onCanvas}</b> из ${total} фактов` +
+          (onCanvas < total ? ` (лимит ${CHANNEL_LEAF_CAP}, остальные — через поиск)` : "") +
+          `. <button type="button" id="collapse-overview" style="margin-left:8px;background:#231f1a;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:4px 10px;cursor:pointer;font-size:11px">свернуть</button>`
+        );
+      } else if (state.expandedTopic) {
+        parts.push(
+          `Подтема на графе: <b>${onCanvas}</b> факт(ов). ` +
+          `<button type="button" id="collapse-overview" style="margin-left:8px;background:#231f1a;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:4px 10px;cursor:pointer;font-size:11px">свернуть</button>`
+        );
+      }
+    }
+    if (!parts.length) {
+      overviewBanner.classList.remove("visible");
+      overviewBanner.innerHTML = "";
+      return;
+    }
+    overviewBanner.innerHTML = parts.join(" · ");
+    overviewBanner.classList.add("visible");
+    const btn = overviewBanner.querySelector("#collapse-overview");
+    if (btn) btn.onclick = () => { collapseToOverview(); runSearch(q.value); };
+  }
+
+  function expandChannelLeaves(uid) {
+    if (!state.overviewMode) return;
+    unmountAllLeaves();
+    state.expandedChannel = uid;
+    state.expandedTopic = null;
+    const cl = clusters.get(uid);
+    if (!cl || !cl.leafLayout) {
+      updateOverviewBanner();
+      return;
+    }
+    const sorted = cl.leafLayout.slice().sort((a, b) => {
+      const la = state.byId.get(a.leafId), lb = state.byId.get(b.leafId);
+      return memoryTs(lb) - memoryTs(la);
+    });
+    mountLeaves(sorted, CHANNEL_LEAF_CAP);
+    updateOverviewBanner();
+  }
+
+  function expandTopicLeaves(tid) {
+    if (!state.overviewMode) return;
+    unmountAllLeaves();
+    state.expandedTopic = tid;
+    state.expandedChannel = null;
+    const specs = [];
+    for (const cl of clusters.values()) {
+      for (const spec of (cl.leafLayout || [])) {
+        if (spec.parentId === tid) specs.push(spec);
+      }
+    }
+    specs.sort((a, b) => {
+      const la = state.byId.get(a.leafId), lb = state.byId.get(b.leafId);
+      return memoryTs(lb) - memoryTs(la);
+    });
+    mountLeaves(specs, TOPIC_LEAF_CAP);
+    updateOverviewBanner();
+  }
+
+  function collapseToOverview() {
+    if (!state.overviewMode) return;
+    unmountAllLeaves();
+    state.expandedChannel = null;
+    state.expandedTopic = null;
+    updateOverviewBanner();
+  }
+
   // Создаём узлы с группировкой по темам
   for (const cl of clusters.values()) {
     // Группируем факты по теме
@@ -599,7 +772,7 @@
     cl.useTopics = useTopics;
 
     const hubR = 4.8 + Math.log2(1 + cl.items.length) * 1.75;
-    state.nodes.push({
+    const hubNode = {
       id: cl.hubId, kind: "hub", isHub: true,
       text: "", label: prettyUid(cl.uid),
       userId: cl.uid, scope: cl.scope,
@@ -607,7 +780,9 @@
       radius: hubR,
       x: cl.cx, y: cl.cy, vx: 0, vy: 0,
       cluster: cl.uid, parent: null,
-    });
+    };
+    state.nodes.push(hubNode);
+    state.byId.set(cl.hubId, hubNode);
 
     if (useTopics) {
       // Раскидаем темы по малой окружности вокруг хаба
@@ -618,7 +793,7 @@
         const ty = cl.cy + Math.sin(a) * 84;
         const tR = 3.1 + Math.min(4.8, Math.log2(1 + items.length) * 1.1);
         const tid = topicIdFor(cl.uid, key);
-        state.nodes.push({
+        const topicNode = {
           id: tid, kind: "topic", isHub: false,
           text: "", label: key,
           userId: cl.uid, scope: cl.scope,
@@ -627,69 +802,35 @@
           x: tx, y: ty, vx: 0, vy: 0,
           cluster: cl.uid, parent: cl.hubId,
           items,
-        });
+        };
+        state.nodes.push(topicNode);
+        state.byId.set(tid, topicNode);
         state.links.push({ a: cl.hubId, b: tid, w: 1.0, kind: "hub-topic" });
 
         for (const item of items) {
-          const leafId = item.id || (cl.uid + "_" + Math.random().toString(36).slice(2));
-          state.nodes.push({
-            id: leafId, kind: "leaf", isHub: false,
-            text: item.text || "",
-            userId: cl.uid, scope: cl.scope,
-            color: cl.color, colorRgb: parseColor(cl.color),
-            radius: leafRadius((item.text || "").length),
-            x: tx + (Math.random() - 0.5) * 54,
-            y: ty + (Math.random() - 0.5) * 54,
-            vx: 0, vy: 0,
-            cluster: cl.uid, parent: tid,
-            metadata: item.metadata, topic: key,
-            updated_at: item.updated_at || item.created_at || "",
-            stale: isStaleItem(item),
-          });
-          state.links.push({ a: tid, b: leafId, w: 1.0, kind: "topic-leaf" });
+          registerLeaf(item, cl, tid, key, tx, ty, "topic-leaf");
         }
       });
 
       // Одиночные факты — прямо к хабу
       for (const item of singleItems) {
-        const leafId = item.id || (cl.uid + "_" + Math.random().toString(36).slice(2));
-        state.nodes.push({
-          id: leafId, kind: "leaf", isHub: false,
-          text: item.text || "",
-          userId: cl.uid, scope: cl.scope,
-          color: cl.color, colorRgb: parseColor(cl.color),
-          radius: leafRadius((item.text || "").length),
-          x: cl.cx + (Math.random() - 0.5) * 96,
-          y: cl.cy + (Math.random() - 0.5) * 96,
-          vx: 0, vy: 0,
-          cluster: cl.uid, parent: cl.hubId,
-          metadata: item.metadata, topic: null,
-          updated_at: item.updated_at || item.created_at || "",
-          stale: isStaleItem(item),
-        });
-        state.links.push({ a: cl.hubId, b: leafId, w: 1.0, kind: "hub-leaf" });
+        registerLeaf(item, cl, cl.hubId, null, cl.cx, cl.cy, "hub-leaf");
       }
     } else {
       // Плоский кластер: хаб -> листья
       for (const item of cl.items) {
-        const leafId = item.id || (cl.uid + "_" + Math.random().toString(36).slice(2));
-        state.nodes.push({
-          id: leafId, kind: "leaf", isHub: false,
-          text: item.text || "",
-          userId: cl.uid, scope: cl.scope,
-          color: cl.color, colorRgb: parseColor(cl.color),
-          radius: leafRadius((item.text || "").length),
-          x: cl.cx + (Math.random() - 0.5) * 96,
-          y: cl.cy + (Math.random() - 0.5) * 96,
-          vx: 0, vy: 0,
-          cluster: cl.uid, parent: cl.hubId,
-          metadata: item.metadata, topic: null,
-          updated_at: item.updated_at || item.created_at || "",
-          stale: isStaleItem(item),
-        });
-        state.links.push({ a: cl.hubId, b: leafId, w: 1.0, kind: "hub-leaf" });
+        registerLeaf(item, cl, cl.hubId, null, cl.cx, cl.cy, "hub-leaf");
       }
     }
+    if (!state.overviewMode && cl.leafLayout) {
+      mountLeaves(cl.leafLayout);
+    }
+  }
+
+  if (state.overviewMode) {
+    updateOverviewBanner();
+  } else if (payload && payload.truncated) {
+    updateOverviewBanner();
   }
   // Тонкие связи между хабами — зависят от логической группы:
   // global <-> topology <-> каждый project (это визуально показывает, что агент
@@ -704,9 +845,9 @@
     for (const p of hubsByScope.project) state.links.push({ a: t, b: p, w: 0.25, kind: "hub-hub" });
   }
 
-  state.byId = new Map(state.nodes.map(n => [n.id, n]));
+  // byId already holds hubs, topics, and all leaves (canvas + off-canvas)
 
-  // --- Межканальные рёбра (файл memory_cross_links.json): только визуализация, без физ. пружины
+  // --- Межканальные рёбра
   const crossPack = payload.cross_links && typeof payload.cross_links === "object" ? payload.cross_links : {};
   const crossEdgesRaw = Array.isArray(crossPack.edges) ? crossPack.edges : [];
   state.crossLinkGroups = crossEdgesRaw.length;
@@ -763,17 +904,20 @@
       n.vx += (tcx - n.x) * PHYS.clusterPull;
       n.vy += (tcy - n.y) * PHYS.clusterPull;
     }
-    // Отталкивание (O(n^2))
+    // Отталкивание: полное для hub/topic; листья — только внутри одного parent (O(n) при больших базах)
+    const heavyPhysics = nodes.length > 120;
     for (let i = 0; i < nodes.length; i++) {
       const a = nodes[i];
       for (let j = i + 1; j < nodes.length; j++) {
         const b = nodes[j];
+        const aLeaf = a.kind === "leaf", bLeaf = b.kind === "leaf";
+        if (heavyPhysics && aLeaf && bLeaf && a.parent !== b.parent) continue;
+        if (heavyPhysics && aLeaf && bLeaf && a.cluster !== b.cluster) continue;
         let dx = a.x - b.x, dy = a.y - b.y;
         let d2 = dx * dx + dy * dy + 0.01;
         const sameCluster = a.cluster === b.cluster;
         let mul = sameCluster ? 1 : PHYS.repulseCross;
-        // Листы одной темы не отталкиваются слишком сильно — ветка должна быть плотной
-        if (sameCluster && a.kind === "leaf" && b.kind === "leaf" && a.parent === b.parent) mul *= 0.52;
+        if (sameCluster && aLeaf && bLeaf && a.parent === b.parent) mul *= 0.52;
         const d = Math.sqrt(d2);
         const f = (PHYS.repulse * mul) / d2;
         const fx = (f * dx) / d, fy = (f * dy) / d;
@@ -956,7 +1100,8 @@
         cl.driftOx = driftAmp * Math.sin(tSlow + ph * 0.016);
         cl.driftOy = driftAmp * Math.cos(tSlow * 0.9 + ph * 0.022);
       }
-      step(); step();
+      const physicsSteps = state.nodes.length > 200 ? 1 : 2;
+      for (let s = 0; s < physicsSteps; s++) step();
     }
     // Плавная камера (tz -> z)
     state.cam.z += (state.cam.tz - state.cam.z) * 0.15;
@@ -975,11 +1120,13 @@
 
   // Подсчёт разделов
   const scopeCounts = { global: 0, topology: 0, project: 0, other: 0 };
-  for (const n of state.nodes) if (n.kind === "leaf") scopeCounts[n.scope]++;
-  const leafCount = state.nodes.filter(x => x.kind === "leaf").length;
+  for (const n of state.byId.values()) if (n.kind === "leaf") scopeCounts[n.scope]++;
+  const leafCount = state.totalLeafCount;
   const topicCount = state.nodes.filter(x => x.kind === "topic").length;
+  const onCanvasLeaves = visibleLeafCount();
   statusText.textContent =
     `${leafCount} фактов · ${clusters.size} каналов · ${topicCount} подтем` +
+    (state.overviewMode && onCanvasLeaves < leafCount ? ` · на графе: ${onCanvasLeaves}` : "") +
     (state.crossLinkGroups ? ` · межканальных связей (группы): ${state.crossLinkGroups}` : "") +
     `  · global: ${scopeCounts.global} · topology: ${scopeCounts.topology} · project: ${scopeCounts.project}`;
 
@@ -1028,7 +1175,7 @@
           `<div><b>${escapeHtml(n.label)}</b></div>` +
           `<div style="color:var(--dim);margin-top:2px">записей: ${cl.items.length}${cl.useTopics ? ` · тем: ${cl.topicKeys.length}` : ""}${cl.staleCount ? ` · устар.: ${cl.staleCount}` : ""} · клик — фильтр</div>`;
       } else if (n.kind === "topic") {
-        const count = state.nodes.filter(x => x.parent === n.id).length;
+        const count = [...state.byId.values()].filter(x => x.parent === n.id).length;
         tooltip.innerHTML =
           `<div class="t-slug">${badge}${escapeHtml(prettyUid(n.userId))} · подтема</div>` +
           `<div><b>${escapeHtml(n.label)}</b></div>` +
@@ -1100,10 +1247,12 @@
     channelFilter.value = userId || "";
     if (!opts.keepQuery) q.value = "";
     updateFilterUi();
+    if (userId && state.overviewMode) expandChannelLeaves(userId);
+    else if (!userId && state.overviewMode) collapseToOverview();
     runSearch(q.value);
     searchPanel.classList.add("open");
-    const nodes = state.nodes.filter(n => n.userId === userId);
-    state.highlighted = new Set(nodes.map(n => n.id));
+    const nodes = [...state.byId.values()].filter(n => n.userId === userId);
+    state.highlighted = new Set(nodes.filter(n => n.kind !== "leaf" || n.onCanvas).map(n => n.id));
     if (opts.focus !== false) {
       const hub = nodes.find(n => n.kind === "hub");
       if (hub) focusNode(hub);
@@ -1112,6 +1261,7 @@
 
   function clearChannelFilter() {
     channelFilter.value = "";
+    if (state.overviewMode) collapseToOverview();
     updateFilterUi();
     runSearch(q.value);
   }
@@ -1160,7 +1310,7 @@
       detail.querySelector("#filter-channel").onclick = () => filterByChannel(n.userId, { keepQuery: false, focus: true });
       detail.querySelector("#show-all").onclick = () => filterByChannel(n.userId, { keepQuery: false, focus: true });
       detail.querySelector("#del-scope").onclick = async () => {
-        const leafIds = state.nodes
+        const leafIds = [...state.byId.values()]
           .filter(x => x.userId === n.userId && x.kind === "leaf")
           .map(x => x.id);
         if (!confirm(
@@ -1182,7 +1332,7 @@
     }
 
     if (n.kind === "topic") {
-      const leaves = state.nodes.filter(x => x.parent === n.id);
+      const leaves = [...state.byId.values()].filter(x => x.parent === n.id);
       detail.innerHTML =
         `<button class="close" title="Закрыть">×</button>` +
         `<h3>${badge}Подтема: ${escapeHtml(n.label)}</h3>` +
@@ -1194,9 +1344,11 @@
         `</div>`;
       detail.querySelector(".close").onclick = () => clearSelection();
       detail.querySelector("#show-branch").onclick = () => {
+        if (state.overviewMode) expandTopicLeaves(n.id);
         q.value = ""; runSearch("");
-        state.highlighted = new Set([n.id, ...leaves.map(x => x.id)]);
-        renderHitsList(leaves);
+        const branchLeaves = [...state.byId.values()].filter(x => x.parent === n.id);
+        state.highlighted = new Set([n.id, ...branchLeaves.filter(x => x.onCanvas).map(x => x.id)]);
+        renderHitsList(branchLeaves);
         searchPanel.classList.add("open");
       };
       detail.querySelector("#del-topic").onclick = async () => {
@@ -1294,42 +1446,55 @@ ${jumps ? `<div style="margin-top:7px">${jumps}</div>` : ""}
   function removeNodeLocal(id) {
     const n = state.byId.get(id);
     if (!n) return;
-    state.nodes = state.nodes.filter(x => x.id !== id);
+    if (n.onCanvas) {
+      state.nodes = state.nodes.filter(x => x.id !== id);
+    }
     state.links = state.links.filter(l => l.a !== id && l.b !== id);
     state.byId.delete(id);
     const cl = clusters.get(n.userId);
-    if (cl) cl.items = cl.items.filter(it => it.id !== id);
+    if (cl) {
+      cl.items = cl.items.filter(it => it.id !== id);
+      if (cl.leafLayout) cl.leafLayout = cl.leafLayout.filter(spec => spec.leafId !== id);
+    }
     state.highlighted.delete(id);
-    // Если удалили последний лист в теме — убрать и тему
     if (n.parent && n.kind === "leaf") {
-      const parent = state.nodes.find(x => x.id === n.parent);
+      const parent = state.byId.get(n.parent);
       if (parent && parent.kind === "topic") {
-        const stillHasChildren = state.nodes.some(x => x.parent === parent.id);
+        const stillHasChildren = [...state.byId.values()].some(x => x.parent === parent.id);
         if (!stillHasChildren) removeNodeLocal(parent.id);
       }
     }
+    if (n.kind === "leaf") state.totalLeafCount = Math.max(0, state.totalLeafCount - 1);
     updateStatus();
+    updateOverviewBanner();
   }
 
   function removeScopeLocal(userId) {
-    const ids = state.nodes.filter(x => x.userId === userId).map(x => x.id);
+    const ids = [...state.byId.values()].filter(x => x.userId === userId).map(x => x.id);
     state.nodes = state.nodes.filter(x => x.userId !== userId);
     state.links = state.links.filter(l => {
       const a = state.byId.get(l.a), b = state.byId.get(l.b);
       return !(a && a.userId === userId) && !(b && b.userId === userId);
     });
     for (const id of ids) state.byId.delete(id);
+    const cl = clusters.get(userId);
+    if (cl) state.totalLeafCount = Math.max(0, state.totalLeafCount - cl.items.length);
     clusters.delete(userId);
     state.highlighted = new Set([...state.highlighted].filter(x => state.byId.has(x)));
+    if (state.expandedChannel === userId) {
+      state.expandedChannel = null;
+      updateOverviewBanner();
+    }
     updateStatus();
   }
 
   function updateStatus() {
-    const leafCount = state.nodes.filter(x => x.kind === "leaf").length;
-    const topicCount = state.nodes.filter(x => x.kind === "topic").length;
+    const topicCount = [...state.byId.values()].filter(x => x.kind === "topic").length;
+    const onCanvas = visibleLeafCount();
     statusText.textContent =
-      `${leafCount} фактов в ${clusters.size} каналах` +
-      (topicCount ? ` · ${topicCount} подтем` : "");
+      `${state.totalLeafCount} фактов в ${clusters.size} каналах` +
+      (topicCount ? ` · ${topicCount} подтем` : "") +
+      (state.overviewMode && onCanvas < state.totalLeafCount ? ` · на графе: ${onCanvas}` : "");
   }
 
   // ---------- search ----------
@@ -1406,7 +1571,7 @@ ${jumps ? `<div style="margin-top:7px">${jumps}</div>` : ""}
       return;
     }
     const found = [];
-    for (const n of state.nodes) {
+    for (const n of state.byId.values()) {
       if (channel && n.userId !== channel) continue;
       if (staleFilter && n.kind === "leaf" && !n.stale) continue;
       if (!t) {
@@ -1423,7 +1588,7 @@ ${jumps ? `<div style="margin-top:7px">${jumps}</div>` : ""}
         found.push(n);
       }
     }
-    state.highlighted = new Set(found.map(x => x.id));
+    state.highlighted = new Set(found.filter(x => x.kind !== "leaf" || x.onCanvas).map(x => x.id));
     renderHitsList(found);
     searchPanel.classList.add("open");
   }
@@ -1440,6 +1605,7 @@ ${jumps ? `<div style="margin-top:7px">${jumps}</div>` : ""}
       q.value = "";
       channelFilter.value = "";
       if (staleOnly) staleOnly.checked = false;
+      if (state.overviewMode) collapseToOverview();
       updateFilterUi();
       runSearch("");
       clearSelection();

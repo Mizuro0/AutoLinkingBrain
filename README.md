@@ -82,7 +82,10 @@ autolinkingbrain/
 | `OLLAMA_LLM` / `OLLAMA_EMBED` | `llama3.2` / `nomic-embed-text` | Mem0 models |
 | `VIEWER_PORT` | `8501` | Brain Viewer port |
 | `VIEWER_HOST` | `127.0.0.1` | Bind address (`0.0.0.0` + `VIEWER_AUTH_TOKEN` for remote) |
-| `VIEWER_AUTH_TOKEN` | (unset) | Optional Bearer token for all `/api/*` when set |
+| `VIEWER_AUTH_TOKEN` | (unset) | Optional Bearer for `/api/*`; recommended even on localhost in paranoid setups |
+| `MEM0_AUTOLOG_BACKEND` | `sqlite` | Hook autolog: `sqlite` (default), `mem0`, or `both` |
+| `MEM0_AUTOLOG_USE_OLLAMA` | `0` | `1` = Ollama distill in afterAgentResponse (slow); default heuristic only |
+| `MEM0_FETCH_TOP_K` | `500` | Per-channel cap for viewer/API; response includes `truncated` when hit |
 | `MEM0_TELEMETRY` | `false` | Set by installer in MCP/hooks env |
 | `MCP_HYBRID_SEARCH` | `1` | BM25 + vector RRF in `retrieveChain` |
 | `MEM0_MCP_INFER` | `0` | `storeKnowledge` LLM extraction via Ollama (`1` = slow, risks MCP timeout) |
@@ -102,19 +105,38 @@ Agent protocol: [docs/AUTONOMOUS_KNOWLEDGE_GRAPH_PROTOCOL.md](docs/AUTONOMOUS_KN
 
 ### Cursor skill & project rules
 
-`python brain.py install` and each MCP server start sync agent assets from `config/cursor/`:
+`python brain.py install` / `sync-agent` copy agent assets from `config/cursor/`:
 
 | Template | Target | Cursor UI |
 |----------|--------|-----------|
-| `config/cursor/skills/.../SKILL.md` | `~/.cursor/skills/autolinking-brain-mcp/` | Agent Skills |
-| `config/cursor/rules/autolinking-brain.mdc` | **`<workspace>/.cursor/rules/`** | **Settings → Rules → Project Rules** |
+| `config/cursor/skills/*/SKILL.md` | `~/.cursor/skills/<id>/` | Agent Skills |
+| `config/cursor/rules/*.mdc` | **`<workspace>/.cursor/rules/`** | Project Rules |
 
-MCP runs with `cwd: ${workspaceFolder}`, so the rule is copied into **each opened project** on first MCP connection.  
-`~/.cursor/rules/` is **not** used by Cursor Settings.
+Skills: `autolinking-brain-mcp`, `mcp-triumvirate`, `architecture-by-feature`.  
+Rules (always): `autolinking-brain.mdc`, `mem0-auto-write.mdc`. On demand: `triumvirate.mdc`, `architecture-curator.mdc`.
+
+MCP profiles (repo default **`standard`** for forks): `minimal` | `standard` (+ QwenReviewer) | `full` (+ ArchitectureCurator).  
+`~/.cursor/rules/` is **not** read by Cursor — rules live in each opened repo.
+
+**Your machine only** — gitignored `config/local/install.yaml` (copy from [config/local/install.yaml.example](config/local/install.yaml.example)):
+
+```yaml
+profile: full
+sync_mcp_on_agent_sync: true
+```
+
+Then `python brain.py mcp install` or `python brain.py sync-agent` applies **full** without changing the public default. See [config/local/README.md](config/local/README.md).
 
 Disable sync: `MEM0_SKIP_CURSOR_AGENT_SYNC=1`. Details: [config/cursor/README.md](config/cursor/README.md).
 
-Refresh rules in all discovered git repos: `python brain.py sync-agent`.
+```powershell
+# One-off override (no local yaml):
+python brain.py mcp install --profile full
+
+python brain.py sync-agent --force-copy
+```
+
+All discovered repos (slow): `python brain.py sync-agent --all-repos`.
 
 ## Brain Viewer
 
@@ -122,6 +144,8 @@ Refresh rules in all discovered git repos: `python brain.py sync-agent`.
 - **Ops tab** — hook/MCP activity, ROI heuristics (`GET /api/metrics`)
 - API: `GET /api/memories`, `DELETE /api/memory/{id}`, `GET /api/health`
 - Remote access: set `VIEWER_AUTH_TOKEN` when binding `VIEWER_HOST=0.0.0.0` (see [viewer_web/README.md](viewer_web/README.md))
+- Localhost: default bind is `127.0.0.1` without auth; set `VIEWER_AUTH_TOKEN` if you want Bearer on loopback too
+- Migrate hook noise out of Chroma: `python brain.py migrate-autolog --dry-run` (uses `.venv`; or `.venv\\Scripts\\python.exe scripts/migrate_autolog_to_sqlite.py`)
 
 Restart viewer after updates: `python brain.py start`
 
@@ -147,18 +171,20 @@ Prefer `python brain.py start`. Scripts `start_viewer.ps1` and autostart now lau
 ## Publishing / fork checklist
 
 1. Copy `config/examples/mcp.json.example` paths to your clone location
-2. Run `python brain.py install`
-3. Do **not** commit `chroma_data/`, `.cursor/*.log`, or personal `memory_cross_links.json` (see `.gitignore`)
-4. Optional: set `CODEGRAPH_WORKSPACE` or edit `codegraph_repos.txt` for monorepos
+2. Optional: `config/local/install.yaml` from `install.yaml.example` (gitignored — your MCP profile)
+3. Run `python brain.py install`
+4. Do **not** commit `chroma_data/`, `.cursor/*.log`, `config/local/install.yaml`, or personal `memory_cross_links.json` (see `.gitignore`)
+5. Optional: set `CODEGRAPH_WORKSPACE` or edit `codegraph_repos.txt` for monorepos
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
 ## Development
 
 ```bash
 pip install -r requirements.txt -r requirements-dev.txt
+# or reproducible: pip install -r requirements-lock.txt
 python -m pytest tests/ -q
 ```
 

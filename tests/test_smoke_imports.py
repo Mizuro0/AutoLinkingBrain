@@ -24,6 +24,9 @@ def test_core_package_imports() -> None:
         "autolinkingbrain.mem0_kb_log",
         "autolinkingbrain.mcp_constants",
         "autolinkingbrain.mcp_context",
+        "autolinkingbrain.indexing_coverage",
+        "autolinkingbrain.review_context",
+        "autolinkingbrain.ollama_client",
     ]
     for name in modules:
         mod = importlib.import_module(name)

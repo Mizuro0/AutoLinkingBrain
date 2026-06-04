@@ -1,0 +1,12 @@
+AutoLinkingBrain
+Copyright 2026 AutoLinkingBrain
+
+This product includes AutoLinkingBrain — semantic memory, MCP tooling, Brain Viewer,
+and optional ArchitectureCurator / QwenReviewer MCP servers.
+
+Third-party components may carry their own licenses (see requirements.txt and
+installed packages). Mem0, ChromaDB, MCP SDK, and other dependencies are not
+authored by AutoLinkingBrain and remain under their respective licenses.
+
+For corporate deployments, retain this NOTICE file in distributions and internal
+forks as required by the Apache License, Version 2.0.

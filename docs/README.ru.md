@@ -121,14 +121,21 @@ python brain.py codegraph
 
 Список репо: `codegraph_repos.txt` или auto-discovery. CodeGraph — отдельный MCP для **структуры кода**, Brain — для **памяти**.
 
-## Метрики
+## Метрики (два уровня)
+
+**Локально (ваше устройство):**
 
 ```powershell
 python brain.py stats
 python brain.py stats --days 30 --json
+python brain.py start   # Viewer → вкладка Ops (клавиша O)
 ```
 
-События: `.cursor/brain_events.jsonl` (не попадают в контекст агента).
+События: `.cursor/brain_events.jsonl` (не попадают в контекст агента). Ops показывает analysis status при `VIEWER_PROJECT_ROOT`.
+
+**Fleet Hub (только admin):** санitized telemetry на VPS — см. [FLEET_DEPLOY.md](FLEET_DEPLOY.md), `python brain.py fleet push`.
+
+Быстрый старт: [QUICKSTART.ru.md](QUICKSTART.ru.md). Протокол: [AGENT_PROTOCOL.md](AGENT_PROTOCOL.md).
 
 ## Межпроектные связи
 

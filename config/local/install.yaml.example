@@ -1,0 +1,17 @@
+# Machine-local MCP install (gitignored copy: install.yaml)
+# Repo default for new clones stays standard; your device can use full without committing.
+
+profile: standard
+# minimal  — AutoLinkingBrain only
+# standard — + QwenReviewer
+# full     — + ArchitectureCurator (Ollama per-module architecture drafts)
+
+mcp_scope: global
+host: cursor
+# mcp_project_root: ""   # set for project-scoped mcp.json only
+
+# true | false | auto — auto adds codegraph MCP when `codegraph` is on PATH
+with_codegraph: auto
+
+# When true, `python brain.py sync-agent` also refreshes MCP from this file
+sync_mcp_on_agent_sync: true

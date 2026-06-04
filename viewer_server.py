@@ -24,12 +24,24 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from autolinkingbrain.mem0_fetch import fetch_all_memories, get_memory
+# Avoid chromadb native crashes on Windows when serving /api/memories.
+os.environ.setdefault("MEM0_FETCH_SQLITE", "1")
+
+from autolinkingbrain.mem0_fetch import (
+    _fetch_use_sqlite,
+    delete_memory_sqlite,
+    delete_scope_sqlite,
+    fetch_all_memories,
+    fetch_scope_ids_sqlite,
+    get_memory,
+)
 from autolinkingbrain.mem0_kb_log import log_mem0
 from autolinkingbrain.mem0_lifecycle import stale_days_default
 from autolinkingbrain.mem0_settings import CHROMA_COLLECTION, chroma_path_resolved
 
 WEB_ROOT = ROOT / "viewer_web"
+_BATCH_DELETE_TOP_K = 1000
+_MAX_BODY_BYTES = 1_048_576
 
 _MIMES = {
     ".html": "text/html; charset=utf-8",
@@ -125,9 +137,49 @@ class Handler(BaseHTTPRequestHandler):
                     "chroma": str(chroma_path_resolved()),
                     "collection": CHROMA_COLLECTION,
                     "stale_days": stale_days_default(),
-                    "viewer_api": "1.1",
+                    "viewer_api": "1.2",
                     "metrics": True,
                     "auth_required": bool(_viewer_auth_token()),
+                    "autolog_api": True,
+                },
+            )
+        if path == "/api/autolog/projects":
+            from autolinkingbrain.autolog_store import list_project_slugs, resolve_db_path
+
+            db_path = resolve_db_path(workspace_root=ROOT)
+            return self._send_json(
+                200,
+                {"projects": list_project_slugs(db_path=db_path), "db_path": str(db_path)},
+            )
+        if path == "/api/autolog":
+            qs = parse_qs(parsed.query)
+            project = (qs.get("project") or [""])[0].strip() or None
+            query = (qs.get("q") or [""])[0].strip()
+            try:
+                limit = int((qs.get("limit") or ["50"])[0])
+            except (TypeError, ValueError):
+                limit = 50
+            limit = max(1, min(limit, 500))
+            from autolinkingbrain.autolog_store import list_recent, resolve_db_path, search_entries
+
+            db_path = resolve_db_path(workspace_root=ROOT)
+            if query:
+                entries = search_entries(
+                    query,
+                    project_slug=project,
+                    limit=limit,
+                    db_path=db_path,
+                )
+            else:
+                entries = list_recent(project, limit=limit, db_path=db_path)
+            return self._send_json(
+                200,
+                {
+                    "entries": entries,
+                    "project": project,
+                    "query": query or None,
+                    "limit": limit,
+                    "db_path": str(db_path),
                 },
             )
         return self._serve_static(path)
@@ -143,39 +195,85 @@ class Handler(BaseHTTPRequestHandler):
             if not mid:
                 return self._send_json(400, {"error": "empty id"})
             try:
-                get_memory().delete(mid)
+                if _fetch_use_sqlite():
+                    delete_memory_sqlite(mid)
+                else:
+                    get_memory().delete(mid)
                 log_mem0("write", "viewer.brain.delete", memory_id=mid)
+                self._invalidate_hybrid_cache()
             except Exception as exc:
                 return self._send_json(500, {"error": str(exc)})
             return self._send_json(200, {"ok": True, "id": mid})
 
         if path.startswith("/api/scope/"):
             uid = unquote(path[len("/api/scope/"):])
-            return self._delete_batch(user_id=uid)
+            qs = parse_qs(parsed.query)
+            confirm = (qs.get("confirm") or ["0"])[0].strip().lower() in ("1", "true", "yes")
+            return self._delete_batch(user_id=uid, confirm=confirm)
 
         if path == "/api/batch":
             return self._delete_batch_body()
 
         return self._send(404, b"not found", "text/plain; charset=utf-8")
 
-    def _delete_batch(self, *, user_id: str) -> None:
+    @staticmethod
+    def _invalidate_hybrid_cache(user_id: str | None = None) -> None:
+        try:
+            from autolinkingbrain.mem0_hybrid_search import invalidate_channel_cache
+
+            invalidate_channel_cache(user_id)
+        except Exception:
+            pass
+
+    def _delete_batch(self, *, user_id: str, confirm: bool = False) -> None:
         if not user_id:
             return self._send_json(400, {"error": "empty user_id"})
-        try:
-            mem = get_memory()
-            raw = mem.get_all(filters={"user_id": user_id}, top_k=1000)
-            rows = raw.get("results", []) if isinstance(raw, dict) else (raw or [])
-        except Exception as exc:
-            return self._send_json(500, {"error": f"fetch failed: {exc}"})
-
-        ids = [str(r.get("id")) for r in rows if r.get("id")]
-        deleted, failed = 0, []
-        for mid in ids:
+        if _fetch_use_sqlite():
+            ids = fetch_scope_ids_sqlite(user_id, top_k=_BATCH_DELETE_TOP_K)
+            truncated = len(ids) >= _BATCH_DELETE_TOP_K
+            if truncated and not confirm:
+                return self._send_json(
+                    409,
+                    {
+                        "error": "truncated_batch",
+                        "truncated": True,
+                        "limits": {"per_scope_top_k": _BATCH_DELETE_TOP_K},
+                        "hint": "Repeat DELETE with ?confirm=1 to delete the fetched subset only.",
+                        "would_delete": len(ids),
+                        "user_id": user_id,
+                    },
+                )
+            deleted, failed = delete_scope_sqlite(user_id, top_k=_BATCH_DELETE_TOP_K)
+        else:
             try:
-                mem.delete(mid)
-                deleted += 1
+                mem = get_memory()
+                raw = mem.get_all(filters={"user_id": user_id}, top_k=_BATCH_DELETE_TOP_K)
+                rows = raw.get("results", []) if isinstance(raw, dict) else (raw or [])
             except Exception as exc:
-                failed.append({"id": mid, "error": str(exc)})
+                return self._send_json(500, {"error": f"fetch failed: {exc}"})
+
+            truncated = len(rows) >= _BATCH_DELETE_TOP_K
+            if truncated and not confirm:
+                return self._send_json(
+                    409,
+                    {
+                        "error": "truncated_batch",
+                        "truncated": True,
+                        "limits": {"per_scope_top_k": _BATCH_DELETE_TOP_K},
+                        "hint": "Repeat DELETE with ?confirm=1 to delete the fetched subset only.",
+                        "would_delete": len(rows),
+                        "user_id": user_id,
+                    },
+                )
+
+            ids = [str(r.get("id")) for r in rows if r.get("id")]
+            deleted, failed = 0, []
+            for mid in ids:
+                try:
+                    mem.delete(mid)
+                    deleted += 1
+                except Exception as exc:
+                    failed.append({"id": mid, "error": str(exc)})
         log_mem0(
             "write",
             "viewer.brain.delete_scope",
@@ -183,14 +281,23 @@ class Handler(BaseHTTPRequestHandler):
             deleted=deleted,
             failed=len(failed),
         )
-        return self._send_json(
-            200,
-            {"ok": True, "user_id": user_id, "deleted": deleted, "failed": failed},
-        )
+        self._invalidate_hybrid_cache(user_id)
+        payload: dict = {
+            "ok": True,
+            "user_id": user_id,
+            "deleted": deleted,
+            "failed": failed,
+        }
+        if truncated:
+            payload["truncated"] = True
+            payload["limits"] = {"per_scope_top_k": _BATCH_DELETE_TOP_K}
+        return self._send_json(200, payload)
 
     def _delete_batch_body(self) -> None:
         try:
             length = int(self.headers.get("Content-Length") or 0)
+            if length > _MAX_BODY_BYTES:
+                return self._send_json(413, {"error": "body too large"})
             raw_body = self.rfile.read(length) if length else b"{}"
             body = json.loads(raw_body or b"{}")
         except Exception as exc:
@@ -198,12 +305,14 @@ class Handler(BaseHTTPRequestHandler):
         ids = body.get("ids") or []
         if not isinstance(ids, list) or not ids:
             return self._send_json(400, {"error": "ids list required"})
-        mem = get_memory()
         deleted, failed = 0, []
         for mid in ids:
             mid_str = str(mid)
             try:
-                mem.delete(mid_str)
+                if _fetch_use_sqlite():
+                    delete_memory_sqlite(mid_str)
+                else:
+                    get_memory().delete(mid_str)
                 deleted += 1
             except Exception as exc:
                 failed.append({"id": mid_str, "error": str(exc)})
@@ -214,6 +323,7 @@ class Handler(BaseHTTPRequestHandler):
             deleted=deleted,
             failed=len(failed),
         )
+        self._invalidate_hybrid_cache()
         return self._send_json(
             200, {"ok": True, "deleted": deleted, "failed": failed}
         )

@@ -4,7 +4,15 @@
 
 ```bash
 pip install -r requirements.txt -r requirements-dev.txt
+# Reproducible / CI-equivalent:
+# pip install -r requirements-lock.txt
 python -m pytest tests/ -q
+```
+
+Refresh lock after bumping direct pins in `requirements.txt`:
+
+```powershell
+.\scripts\regenerate_requirements_lock.ps1
 ```
 
 CI (`.github/workflows/ci.yml`) runs the same on Ubuntu for every push/PR to `main`.

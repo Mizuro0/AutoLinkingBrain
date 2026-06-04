@@ -1,0 +1,43 @@
+---
+description: >-
+  MANDATORY when user asks to compose/design architecture (составить архитектуру,
+  спроектировать, архитектурный план, module map). Host agent analyzes project and
+  weak spots; ArchitectureCurator+Ollama only drafts per-module MD. Skill architecture-by-feature.
+globs:
+alwaysApply: false
+---
+
+# ArchitectureCurator — host agent analyzes, Ollama drafts
+
+**Skill:** `architecture-by-feature` (read it first). **Protocol:** `docs/ARCHITECTURE_AGENT_PROTOCOL.md`.
+
+## Triggers
+
+Apply this rule when the user asks to **compose / design / update architecture** (RU: *составить архитектуру*, *спроектировать*, *описать модули*, *архитектурный план*; EN: *design architecture*, *architecture doc*).
+
+## Role split (non-negotiable)
+
+| Responsibility | Owner |
+|----------------|--------|
+| Project analysis, weak spots, coupling, risks, module list | **Cursor host agent** (Brain + CodeGraph + code) |
+| Per-module architecture MD draft | **Ollama** via `runArchitectModule` |
+| Answers to `Q:`, implementation, `agent_review` | **Cursor host agent** |
+
+The small local model **must not** replace your repo analysis.
+
+## Workflow
+
+1. **You:** `sessionContextPack` / `retrieveChain` + CodeGraph → synthesize modules + weak spots for the user.
+2. `getArchitectProtocol` → `planArchitectureRun { modules: [...] }`.
+3. **Per module:** `runArchitectModule` with **your** condensed `context` → `getArchitectHandoff` → **read** `docs/architecture/modules/<slug>.md`.
+4. `recordAgentArchitectureReview` → next module → `storeKnowledge`.
+
+One module per `runArchitectModule`. After `signal: module_ready`, read the file before coding.
+
+## Do not
+
+- Loop `runProjectAnalysis` for architecture docs (use `syncProjectIndex` for index state).
+- Batch multiple modules in one architect call.
+- Skip `storeKnowledge` after each completed module.
+
+Ollama: `ollama serve`. MCP: `user-ArchitectureCurator` (profile `full`).

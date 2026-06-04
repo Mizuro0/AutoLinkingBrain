@@ -1,0 +1,19 @@
+---
+description: >-
+  Triumvirate — Brain + CodeGraph + optional Pocock grill/TDD/diagnose. Request
+  when starting non-trivial work or combining alignment with Mem0 workflow.
+alwaysApply: false
+---
+
+# Triumvirate (on demand)
+
+Skill: **`mcp-triumvirate`**. Domain terms: **`CONTEXT.md`**.
+
+1. `sessionContextPack` first (not grep).
+2. If scope unclear → grill-with-docs → update `CONTEXT.md` → `storeKnowledge`.
+3. Code changes → CodeGraph before broad file scans.
+4. API/contracts → `retrieveChain` before edits.
+5. User asks architecture → **`architecture-by-feature`**: **you** analyze weak spots; Ollama `runArchitectModule` per module only.
+6. End → `storeKnowledge` summary.
+
+Skills: **`mcp-triumvirate`**, **`architecture-by-feature`**. Do not install ECC full profile — overlaps Brain hooks and memory.
