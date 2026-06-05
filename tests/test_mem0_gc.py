@@ -36,7 +36,8 @@ def test_classify_keep_fact():
     assert classify_row(row, expected_user_id="project_x") == "keep"
 
 
-def test_audit_and_purge_dry_run():
+def test_audit_and_purge_dry_run(monkeypatch):
+    monkeypatch.setenv("MEM0_FETCH_SQLITE", "0")  # exercise injected db, not on-disk SQLite
     rows = [
         {"id": "a", "user_id": "project_t", "memory": "[CURSOR] autolog x" * 5},
         {"id": "b", "user_id": "project_t", "memory": "[JAVA] [API_CONTRACT] (Updated: x): API v1"},
@@ -49,7 +50,8 @@ def test_audit_and_purge_dry_run():
     assert result.dry_run and result.deleted == 0
 
 
-def test_list_duplicates_exact():
+def test_list_duplicates_exact(monkeypatch):
+    monkeypatch.setenv("MEM0_FETCH_SQLITE", "0")  # exercise injected db, not on-disk SQLite
     rows = [
         {"id": "1", "user_id": "project_t", "memory": "same text here for duplicate test"},
         {"id": "2", "user_id": "project_t", "memory": "same text here for duplicate test"},

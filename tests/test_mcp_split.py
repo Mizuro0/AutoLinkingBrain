@@ -75,4 +75,6 @@ def test_register_tools_wires_all_domains() -> None:
     mcp = MagicMock()
     mctx = McpContext(db=MagicMock())
     register_tools(mcp, mctx)
-    assert mcp.tool.call_count == 13
+    # 9 domain modules (topology, indexing, health, knowledge, lifecycle,
+    # autolog, gc, analysis, sync) register 18 tools total.
+    assert mcp.tool.call_count == 18
