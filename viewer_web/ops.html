@@ -267,8 +267,13 @@
     const roi = data.roi || {};
     const cg = data.codegraph || {};
     const mem0 = data.mem0 || {};
+    const nt = roi.net_tokens || {};
+    const nu = roi.net_usd || {};
+    const share = Math.round((roi.measured_share != null ? roi.measured_share : 1) * 100);
     const items = [
-      { label: "Tokens saved (est.)", value: "~" + fmt(roi.tokens_saved_estimate || 0), sub: "~$" + (roi.usd_saved_estimate || 0), cls: "roi" },
+      { label: "Net tokens saved (est.)", value: "~" + fmt(nt.mid || 0), sub: "~$" + (nu.mid || 0) + " · range " + fmt(nt.low || 0) + "–" + fmt(nt.high || 0), cls: "roi" },
+      { label: "Memory cost (Cursor)", value: "~" + fmt((roi.context_injected_tokens || 0) + (roi.write_tokens || 0)) + " tok", sub: fmt(roi.context_injected_tokens || 0) + " in · " + fmt(roi.write_tokens || 0) + " out" },
+      { label: "Measured share", value: share + "%", sub: "rest = row-count est." },
       { label: "Mem reads", value: data.mem_reads || 0, sub: (data.read_rows_total || 0) + " rows" },
       { label: "Mem writes", value: data.mem_writes || 0, sub: fmt(data.stored_chars_total || 0) + " chars" },
       { label: "MCP hits", value: data.mcp_search_hits || 0, sub: (data.hybrid_reads || 0) + " hybrid" },

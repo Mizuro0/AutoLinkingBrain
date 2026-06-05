@@ -17,10 +17,22 @@ from autolinkingbrain.paths import REPO_ROOT
 _DEFAULT_EVENTS = REPO_ROOT / ".cursor" / "brain_events.jsonl"
 _LEGACY_KB = REPO_ROOT / ".cursor" / "mem0_kb_activity.log"
 
-# Heuristic ROI (override via env).
-_TOKENS_PER_MEMORY_HIT = int(os.environ.get("MEM0_METRICS_TOKENS_PER_HIT", "420"))
-_TOKENS_PER_STORED_CHAR = float(os.environ.get("MEM0_METRICS_TOKENS_PER_STORED_CHAR", "0.35"))
-_USD_PER_1M_TOKENS = float(os.environ.get("MEM0_METRICS_USD_PER_1M", "3.0"))
+# ROI is modelled as the *Cursor cloud agent* token economy (local Ollama work is
+# free and excluded). All knobs override via env.
+#   - Reads inject memory into the agent context  -> measurable COST (input tokens)
+#     and a counterfactual BENEFIT (avoided reconstruction = injected x reuse_mult).
+#   - storeKnowledge text is produced by the cloud agent -> COST (output tokens).
+#   - Autolog writes copy the agent's own reply locally -> no extra cloud tokens.
+_CHARS_PER_TOKEN = float(os.environ.get("MEM0_METRICS_CHARS_PER_TOKEN", "4.0"))
+_REUSE_MULT_MID = float(os.environ.get("MEM0_METRICS_REUSE_MULT", "3.0"))
+_REUSE_MULT_LOW = float(os.environ.get("MEM0_METRICS_REUSE_MULT_LOW", "1.5"))
+_REUSE_MULT_HIGH = float(os.environ.get("MEM0_METRICS_REUSE_MULT_HIGH", "6.0"))
+_AVG_FACT_CHARS = float(os.environ.get("MEM0_METRICS_AVG_FACT_CHARS", "280"))
+_USD_PER_1M_INPUT = float(os.environ.get("MEM0_METRICS_USD_PER_1M_INPUT", "3.0"))
+_USD_PER_1M_OUTPUT = float(os.environ.get("MEM0_METRICS_USD_PER_1M_OUTPUT", "15.0"))
+# Read sources that actually inject memory into the agent context (for legacy
+# events without ret_chars, fall back to rows x avg fact size).
+_LEAF_READ_PREFIXES = ("mcp.retrieveChain", "hook.sessionStart")
 
 
 def events_path() -> Path:
@@ -177,6 +189,105 @@ def aggregate_for_viewer(*, days: float = 7.0, recent_limit: int = 80) -> dict:
     return report
 
 
+def _compute_roi(events: list[dict]) -> dict:
+    """Cursor-agent token economy.
+
+    Cost (measured in real chars → tokens):
+      * injected context delivered by reads  → input tokens
+      * storeKnowledge fact text             → output tokens
+    Benefit (counterfactual, range): avoided reconstruction ≈ injected × reuse_mult.
+    Net = benefit − injected − write. Local Ollama embedding is free and excluded.
+    """
+    injected_chars = 0
+    measured_injected_chars = 0
+    store_chars = 0       # storeKnowledge: cloud-agent output cost
+    autolog_chars = 0     # autolog copy of replies: no extra cloud tokens
+
+    for rec in events:
+        ev = str(rec.get("event") or "")
+        source = str(rec.get("source") or "")
+        if ev == "mem.read":
+            if source.startswith("viewer."):
+                continue
+            ret = rec.get("ret_chars")
+            if ret is not None:
+                c = max(0, int(ret))
+                injected_chars += c
+                measured_injected_chars += c
+            elif source.startswith(_LEAF_READ_PREFIXES):
+                rows = int(rec.get("rows") or rec.get("hits") or 0)
+                if rows > 0:
+                    injected_chars += int(rows * _AVG_FACT_CHARS)
+        elif ev == "mem.write":
+            c = max(0, int(rec.get("stored_chars") or 0))
+            if source.startswith("mcp.store"):
+                store_chars += c
+            else:
+                autolog_chars += c
+
+    cpt = max(1.0, _CHARS_PER_TOKEN)
+    injected_tokens = injected_chars / cpt
+    write_tokens = store_chars / cpt
+
+    def _net_tokens(mult: float) -> int:
+        return int(round(injected_tokens * (mult - 1.0) - write_tokens))
+
+    def _net_usd(mult: float) -> float:
+        gross_usd = injected_tokens * mult / 1_000_000 * _USD_PER_1M_INPUT
+        cost_usd = (
+            injected_tokens / 1_000_000 * _USD_PER_1M_INPUT
+            + write_tokens / 1_000_000 * _USD_PER_1M_OUTPUT
+        )
+        return round(gross_usd - cost_usd, 4)
+
+    cost_usd = round(
+        injected_tokens / 1_000_000 * _USD_PER_1M_INPUT
+        + write_tokens / 1_000_000 * _USD_PER_1M_OUTPUT,
+        4,
+    )
+    measured_share = (
+        round(measured_injected_chars / injected_chars, 3) if injected_chars else 1.0
+    )
+
+    return {
+        "model": "client_cursor_net_v2",
+        # Back-compat keys (now NET midpoint; may be negative if reuse is low).
+        "tokens_saved_estimate": _net_tokens(_REUSE_MULT_MID),
+        "usd_saved_estimate": _net_usd(_REUSE_MULT_MID),
+        "net_tokens": {
+            "low": _net_tokens(_REUSE_MULT_LOW),
+            "mid": _net_tokens(_REUSE_MULT_MID),
+            "high": _net_tokens(_REUSE_MULT_HIGH),
+        },
+        "net_usd": {
+            "low": _net_usd(_REUSE_MULT_LOW),
+            "mid": _net_usd(_REUSE_MULT_MID),
+            "high": _net_usd(_REUSE_MULT_HIGH),
+        },
+        "context_injected_tokens": int(round(injected_tokens)),
+        "write_tokens": int(round(write_tokens)),
+        "cost_usd": cost_usd,
+        "autolog_tokens_free": int(round(autolog_chars / cpt)),
+        "measured_share": measured_share,
+        "assumptions": {
+            "chars_per_token": _CHARS_PER_TOKEN,
+            "reuse_mult_low": _REUSE_MULT_LOW,
+            "reuse_mult_mid": _REUSE_MULT_MID,
+            "reuse_mult_high": _REUSE_MULT_HIGH,
+            "usd_per_1m_input": _USD_PER_1M_INPUT,
+            "usd_per_1m_output": _USD_PER_1M_OUTPUT,
+            "avg_fact_chars_fallback": _AVG_FACT_CHARS,
+        },
+        "note": (
+            "Net Cursor-agent token estimate: avoided context reconstruction "
+            "(injected x reuse_mult) minus injected context (input) and "
+            "storeKnowledge text (output). Counterfactual range, not a real bill; "
+            "local Ollama embedding is free. measured_share = fraction from real "
+            "sizes vs legacy row-count fallback."
+        ),
+    }
+
+
 def _aggregate_events(events: list[dict], *, days: float) -> dict:
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(days=max(0.01, days))
@@ -218,21 +329,7 @@ def _aggregate_events(events: list[dict], *, days: float) -> dict:
             if status == "error":
                 errors[f"mcp:{rec.get('tool', '?')}"] += 1
 
-    tokens_from_reads = 0
-    for rec in events:
-        if str(rec.get("event") or "") != "mem.read":
-            continue
-        source = str(rec.get("source") or "")
-        if source.startswith("viewer."):
-            continue
-        rows = int(rec.get("rows") or rec.get("hits") or 0)
-        if rows <= 0:
-            continue
-        if source.startswith("mcp.") or source.startswith("hook.sessionStart"):
-            tokens_from_reads += rows * _TOKENS_PER_MEMORY_HIT
-    tokens_from_stores = int(stored_chars * _TOKENS_PER_STORED_CHAR)
-    tokens_saved_est = tokens_from_reads + tokens_from_stores
-    usd_saved_est = round(tokens_saved_est / 1_000_000 * _USD_PER_1M_TOKENS, 4)
+    roi = _compute_roi(events)
 
     codegraph = _codegraph_summary()
     mem0_channels = _mem0_channel_summary()
@@ -252,12 +349,7 @@ def _aggregate_events(events: list[dict], *, days: float) -> dict:
         "write_by_source": dict(write_by_source.most_common(15)),
         "hook_status": dict(hook_status.most_common(20)),
         "errors": dict(errors),
-        "roi": {
-            "tokens_saved_estimate": tokens_saved_est,
-            "usd_saved_estimate": usd_saved_est,
-            "tokens_per_hit": _TOKENS_PER_MEMORY_HIT,
-            "note": "heuristic — Cursor does not expose real token bills to MCP",
-        },
+        "roi": roi,
         "codegraph": codegraph,
         "mem0": mem0_channels,
         "events_path": str(events_path()),
@@ -411,6 +503,14 @@ def _mem0_channel_summary() -> dict:
         return {"error": str(exc)[:120]}
 
 
+def _nt(roi: dict, key: str) -> int:
+    return int((roi.get("net_tokens") or {}).get(key, 0))
+
+
+def _nu(roi: dict, key: str) -> float:
+    return float((roi.get("net_usd") or {}).get(key, 0.0))
+
+
 def format_report(report: dict) -> str:
     roi = report.get("roi") or {}
     cg = report.get("codegraph") or {}
@@ -426,9 +526,13 @@ def format_report(report: dict) -> str:
         f"  MCP search hits:     {report.get('mcp_search_hits', 0)}",
         f"  hybrid reads:        {report.get('hybrid_reads', 0)}",
         "",
-        "ROI (estimate):",
-        f"  tokens saved:        ~{roi.get('tokens_saved_estimate', 0):,}",
-        f"  USD saved:           ~${roi.get('usd_saved_estimate', 0)}",
+        "ROI - Cursor agent token economy (estimate):",
+        f"  context injected:    ~{roi.get('context_injected_tokens', 0):,} tok  (input cost)",
+        f"  storeKnowledge cost: ~{roi.get('write_tokens', 0):,} tok  (output cost)",
+        f"  net tokens saved:    ~{_nt(roi, 'low'):,} ... {_nt(roi, 'mid'):,} ... {_nt(roi, 'high'):,}",
+        f"  net USD saved:       ~${_nu(roi, 'low')} ... ${_nu(roi, 'mid')} ... ${_nu(roi, 'high')}",
+        f"  measured share:      {round(float(roi.get('measured_share', 1)) * 100)}%"
+        f"  (autolog {roi.get('autolog_tokens_free', 0):,} tok = free)",
         f"  ({roi.get('note', '')})",
     ]
 
