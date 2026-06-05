@@ -15,6 +15,7 @@ MANDATORY automated session loop (execute without user asking):
 2. User asks to refresh/reindex project info → syncProjectIndex (one repo) or syncAllProjects (all discovered) — NOT repeated runProjectAnalysis.
 3. Before shared API changes → retrieveChain with linked_projects.
 4. After decisions, bugfixes, API changes → storeKnowledge (English, tech, scenario, context_path in monorepo).
+   NEVER parallel storeKnowledge in one turn — wait for each result; prefer scope=project (not both unless global lesson).
 5. End of task: if no storeKnowledge yet → one summary storeKnowledge.
 Chat and hooks do NOT populate structured memory — only storeKnowledge and runProjectAnalysis do.
 
@@ -33,6 +34,7 @@ Tool routing:
 7. Knowledge cleanup: auditKnowledge → purgeMemories; purgeIndexingLogs / brain.py gc purge-indexing for Indexed source noise.
 
 Writes via storeKnowledge, registerDependency, markIndexingComplete: English only, one fact per entry when possible.
+storeKnowledge writes directly to Chroma (embed+insert) — call one at a time and wait for the result; never run storeKnowledge in parallel, and never force-kill brain_server mid-write (can corrupt the Chroma index).
 
 Monorepo / multi-repo folder (e.g. feature/backend + feature/crm opened together): pass context_path with the
 file or subproject path so memories go to project_backend / project_crm — not project_feature.

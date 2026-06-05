@@ -29,6 +29,7 @@ While implementing
 
 After each significant decision / bugfix / API change
   → storeKnowledge { text EN, tech, scenario, context_path?, scope }
+  → wait for tool result before the next storeKnowledge (never parallel / no batch in one turn)
 
 Reindex required
   → registerDependency → storeKnowledge → markIndexingComplete
@@ -74,8 +75,24 @@ If `retrieveChain` returns *No curated facts found* — run analysis or store fa
 | text | English, one fact, **include file path** |
 | tech | kotlin, python, node, … |
 | scenario | architecture, bugfix, api_contract, indexing |
-| scope | project / both |
+| scope | **project** (default); `both` only if also `global_skills` |
 | context_path | monorepo subproject path |
+
+### Concurrency and MCP stability (critical)
+
+AutoLinkingBrain = **one STDIO process** per Cursor session. Each `storeKnowledge` = Ollama embed + Chroma insert (seconds, sometimes minutes).
+
+| Do | Don't |
+|----|-------|
+| **One** `storeKnowledge`, then read the tool result | 2–3 `storeKnowledge` **in parallel** in the same agent step |
+| Next fact on the **next** turn after success | “Catch up” batch after `Connection closed` |
+| `scope: project` for task-local facts | `scope: both` unless the lesson belongs in `global_skills` |
+
+Writes go **straight to Chroma** (no server-side queue). Running storeKnowledge in parallel can race the vector index; Cursor may also drop STDIO on client timeout while a write is in flight (`transport_closed` / `Connection closed`) — Reload restores it.
+
+**Лучше по-прежнему не слать пачкой — Cursor может отрубить STDIO по таймауту, даже если сервер жив.**
+
+**Never force-kill `brain_server` during a write** (`Inserting 1 vectors`): it can corrupt the ChromaDB HNSW index → native crash (`access violation`) on every later insert → `Connection closed`. Recovery: `python scripts/_chroma_recover.py extract` then `rebuild` (lossless re-embed from SQLite). ChromaDB is not safe for concurrent writes from many processes.
 
 ## Companion MCPs
 

@@ -1,116 +1,62 @@
 ---
-
 description: >-
-
   Mandatory Mem0 writes via storeKnowledge after decisions — agents must persist
-
   knowledge to AutoLinkingBrain, not only chat or hooks.
-
 alwaysApply: true
-
 ---
-
-
 
 # Mem0 auto-write (mandatory)
 
-
-
 **Global rule** — `~/.cursor/rules/` via `python brain.py onboard`. Also injected on sessionStart and in MCP server instructions.
-
-
 
 When **AutoLinkingBrain** MCP is available, persist knowledge **in the same session** you learn it.
 
-
-
 ## When to call storeKnowledge
 
-
-
 | Trigger | scenario | Example |
-
 |---------|----------|---------|
-
 | Chose architecture / pattern | architecture | "Auth uses JWT in middleware X" |
-
 | Fixed non-trivial bug | bugfix | root cause + fix location |
-
 | Changed or added API | api_contract | endpoint, DTO, breaking change |
-
 | Completed reindex slice | indexing | module map, entrypoints |
-
 | Learned project-specific gotcha | architecture | env, deploy, config trap |
-
 | Finished ArchitectureCurator feature slice | architecture | summary + `docs/ARCHITECTURE.generated.md` path |
-
 | Hard debugging / non-obvious root cause | bugfix | symptoms, cause, fix — `scope: both` if reusable |
-
 | Cross-project pattern (ES, SQL, JVM, caching, etc.) | architecture | `scope: global` or `both` — write **expanded** (constraints → what worked) |
 
+One fact per call. **Never call storeKnowledge in parallel** — wait for the previous result (same MCP process; embed+Chroma). Prefer **`scope: project`**; use `both` only when the lesson must also land in `global_skills`.
 
+**Do not batch several storeKnowledge in one agent turn**: writes go straight to Chroma (no server-side queue), and Cursor may close the MCP STDIO transport on timeout while Brain is still working → `Connection closed` / `transport_closed` and a dead AutoLinkingBrain until Reload. Pattern: one call → read the tool result → next call if needed. Never force-kill `brain_server` mid-write — it can corrupt the Chroma index (recovery: `scripts/_chroma_recover.py`).
 
-One fact per call. **Project-local:** include a **file path** in `text` or `context_path`. **Global patterns:** path optional; prefer concrete rules (settings, query shape, index mapping).
-
-
+**Project-local:** include a **file path** in `text` or `context_path`. **Global patterns:** path optional; prefer concrete rules (settings, query shape, index mapping).
 
 ## global_skills (`scope: global` | `both`)
 
-
-
 - **`global`** — transferable know-how (Elasticsearch indexing conventions, DB query plans, lock contention, framework traps) without tying to one repo.
-
 - **`both`** — same pattern **plus** how it applies in the current project (keep one dense fact, not two vague ones).
-
 - **`project`** (default) — only this codebase (module map, local API, deploy).
-
-
 
 Hooks **autolog** → **SQLite** `.cursor/autolog.db` only (not Mem0 unless `MEM0_AUTOLOG_ALLOW_MEM0=1`). Read logs with **`listSessionAutolog`** / **`searchSessionAutolog`**. Curated recall = **`storeKnowledge`** only.
 
-
-
 Body may be long (up to ~5500 chars) — use for “lessons learned”, not one-liners.
-
-
 
 **Generated arch MD alone is not enough** — after each module `recordAgentArchitectureReview` → `storeKnowledge` (scenario: architecture, paths to `docs/architecture/modules/<slug>.md`).
 
-
-
 ## Minimum per session
 
-
-
 - **Start:** `checkProjectHealth` (or `sessionContextPack` once).
-
 - **During:** ≥1 `storeKnowledge` if you made any decision or discovery worth recalling.
-
 - **End of task:** if nothing stored yet but work was done → one summary `storeKnowledge`.
-
-
 
 ## MCP call pattern
 
-
-
 ```
-
 server: user-AutoLinkingBrain
-
 tool: storeKnowledge
-
 { text: "English fact with path src/foo.py ...", tech: "...", scenario: "architecture", scope: "project", context_path: "..." }
 
-
-
 # Global pattern example:
-
 { text: "Elasticsearch: use nested for X; avoid scripting on Y; reindex alias Z …", tech: "elasticsearch", scenario: "architecture", scope: "global" }
-
 ```
 
-
-
-If MCP errors: note briefly, continue work — retry store on next stable turn.
-
+If MCP errors (`Connection closed`, `Not connected`): Reload MCP, then **one** short `storeKnowledge` (`scope: project`); do not fire 2–3 in parallel to “catch up”.

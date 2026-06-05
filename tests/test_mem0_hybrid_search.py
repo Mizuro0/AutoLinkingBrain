@@ -31,7 +31,11 @@ def test_tokenize_splits_paths_and_words() -> None:
     assert "src/main.py" in tokens or "main.py" in tokens
 
 
-def test_hybrid_mem_search_rrf_merges_vector_and_bm25() -> None:
+def test_hybrid_mem_search_rrf_merges_vector_and_bm25(monkeypatch) -> None:
+    monkeypatch.setenv("MEM0_FETCH_SQLITE", "0")  # use injected fake mem0, not on-disk SQLite
+    from autolinkingbrain.mem0_hybrid_search import invalidate_channel_cache
+
+    invalidate_channel_cache()
     rows = [
         {"id": "a", "user_id": "project_demo", "memory": "authentication JWT middleware"},
         {"id": "b", "user_id": "project_demo", "memory": "database migration notes"},

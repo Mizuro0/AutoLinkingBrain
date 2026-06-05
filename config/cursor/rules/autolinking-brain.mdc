@@ -24,7 +24,7 @@ MCP server: **`user-AutoLinkingBrain`**. Skill: **`autolinking-brain-mcp`**.
 ## During work
 
 - Before shared API/contract changes → **`retrieveChain`** with `linked_projects` (default `facts_only=true`).
-- After decisions, bugfixes, API changes, subtask done → **`storeKnowledge`** (English, `tech`, `scenario`, `context_path` in monorepo).
+- After decisions, bugfixes, API changes, subtask done → **`storeKnowledge`** (English, `tech`, `scenario`, `context_path` in monorepo). **One call per turn**, wait for result — no parallel/batch (STDIO timeout kills MCP).
 - Reindex when `REINDEX_PROTOCOL: required` → `registerDependency` + `storeKnowledge` + `markIndexingComplete`.
 
 **Session logs** → SQLite `.cursor/autolog.db` via hooks (`listSessionAutolog` / `searchSessionAutolog`). **Curated facts** → Mem0 via `storeKnowledge` only. Never treat autolog as architecture truth.
