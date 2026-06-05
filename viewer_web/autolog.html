@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Brain — Session autolog</title>
+<style>
+  :root {
+    --bg: #0e0d0c;
+    --fg: #eadfc8;
+    --dim: #8a8275;
+    --line: #2c2925;
+    --panel: rgba(20, 18, 15, 0.88);
+    --accent: #9a8f6c;
+    --tag: #6a7d8f;
+    --llama: #8f7a9a;
+    --ok: #6b8f71;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; min-height: 100%;
+    background: radial-gradient(ellipse at top, #141210 0%, var(--bg) 70%);
+    color: var(--fg);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  #tabs {
+    position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 4px; z-index: 20;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 4px;
+    backdrop-filter: blur(10px);
+  }
+  #tabs a {
+    color: var(--dim); text-decoration: none; font-size: 12px;
+    padding: 7px 16px; border-radius: 9px; transition: .15s;
+  }
+  #tabs a:hover { color: var(--fg); background: rgba(255,255,255,0.04); }
+  #tabs a.active { color: var(--fg); background: rgba(201,178,122,0.12); }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 64px 20px 32px; }
+  .toolbar {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    margin-bottom: 16px; flex-wrap: wrap; gap: 12px;
+  }
+  .toolbar h1 { margin: 0; font-size: 20px; font-weight: 600; }
+  .toolbar .sub { font-size: 11px; color: var(--dim); margin-top: 4px; max-width: 520px; line-height: 1.4; }
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .controls input, .controls select, .controls button {
+    background: #161412; color: var(--fg); border: 1px solid var(--line);
+    border-radius: 8px; padding: 7px 12px; font-size: 12px;
+  }
+  .controls input { min-width: 200px; }
+  .controls button { cursor: pointer; }
+  .controls button:hover { background: #221e19; }
+  .meta {
+    font-size: 11px; color: var(--dim); margin-bottom: 14px;
+    padding: 10px 14px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px;
+  }
+  .meta code { color: var(--accent); font-size: 10.5px; }
+  .list { display: flex; flex-direction: column; gap: 10px; }
+  .entry {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; overflow: hidden;
+  }
+  .entry-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 12px; padding: 12px 14px; cursor: pointer;
+  }
+  .entry-head:hover { background: rgba(255,255,255,0.02); }
+  .entry-head .title { font-size: 13px; font-weight: 500; }
+  .entry-head .preview {
+    font-size: 12px; color: var(--dim); margin-top: 4px;
+    line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .entry-meta {
+    flex-shrink: 0; text-align: right; font-size: 10px; color: var(--dim);
+  }
+  .badge {
+    display: inline-block; font-size: 9px; text-transform: uppercase;
+    letter-spacing: .05em; padding: 2px 6px; border-radius: 4px;
+    margin-left: 4px; vertical-align: middle;
+  }
+  .badge.llama { background: rgba(143,122,154,0.2); color: #c9b8d4; }
+  .badge.heuristic { background: rgba(106,125,143,0.2); color: #a8b8c8; }
+  .badge.log { background: rgba(154,143,106,0.15); color: var(--accent); }
+  .entry-body {
+    display: none; padding: 0 14px 14px;
+    font-size: 12px; line-height: 1.55; white-space: pre-wrap;
+    word-break: break-word; color: #d4c9b0;
+    border-top: 1px solid var(--line);
+    max-height: 420px; overflow-y: auto;
+  }
+  .entry.open .entry-body { display: block; padding-top: 12px; }
+  .empty, #load-err {
+    text-align: center; padding: 48px 20px; color: var(--dim); font-size: 13px;
+  }
+  #load-err { color: #c99; display: none; }
+  .count { color: var(--accent); }
+</style>
+</head>
+<body>
+<nav id="tabs">
+  <a href="/">Память</a>
+  <a href="/autolog.html" class="active">Сессии</a>
+  <a href="/ops.html">Ops</a>
+</nav>
+
+<div class="wrap">
+  <div class="toolbar">
+    <div>
+      <h1>Session autolog</h1>
+      <p class="sub">
+        Содержательные логи сессий (SQLite). Отдельно от curated-фактов Mem0 на вкладке «Память».
+        Пишутся хуками Cursor; для архитектурных решений используйте <code>storeKnowledge</code>.
+      </p>
+    </div>
+    <div class="controls">
+      <select id="project" title="Проект">
+        <option value="">все проекты</option>
+      </select>
+      <input id="q" type="search" placeholder="Поиск в логах…" autocomplete="off" />
+      <select id="limit" title="Лимит">
+        <option value="30">30</option>
+        <option value="50" selected>50</option>
+        <option value="100">100</option>
+        <option value="200">200</option>
+      </select>
+      <button type="button" id="refresh">Обновить</button>
+    </div>
+  </div>
+
+  <div class="meta" id="meta">Загрузка…</div>
+  <div id="load-err"></div>
+  <div class="list" id="list"></div>
+  <div class="empty" id="empty" style="display:none">Записей нет. Включите hooks (<code>MEM0_AUTOLOG_BACKEND=sqlite</code>) и поработайте в Cursor.</div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  const projectEl = document.getElementById("project");
+  const qEl = document.getElementById("q");
+  const limitEl = document.getElementById("limit");
+  const refreshBtn = document.getElementById("refresh");
+  const metaEl = document.getElementById("meta");
+  const listEl = document.getElementById("list");
+  const emptyEl = document.getElementById("empty");
+  const loadErr = document.getElementById("load-err");
+
+  function authHeaders() {
+    const t = localStorage.getItem("viewer_token") || "";
+    return t ? { Authorization: "Bearer " + t } : {};
+  }
+
+  function tagBadge(body) {
+    if (body.includes("[AUT_LOG_LLAMA]")) return '<span class="badge llama">llama</span>';
+    if (body.includes("[AUT_LOG_HEURISTIC")) return '<span class="badge heuristic">heuristic</span>';
+    if (body.includes("[AUT_LOG]")) return '<span class="badge log">autolog</span>';
+    return "";
+  }
+
+  function previewText(body) {
+    const lines = body.split("\n").filter((l) => !l.startsWith("[CURSOR]") && l.trim() !== "---");
+    const t = lines.join(" ").trim() || body;
+    return t.length > 220 ? t.slice(0, 217) + "…" : t;
+  }
+
+  function formatTs(iso) {
+    if (!iso) return "";
+    try {
+      const d = new Date(iso);
+      return d.toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" });
+    } catch (_) {
+      return iso.slice(0, 16);
+    }
+  }
+
+  function renderEntries(data) {
+    const entries = data.entries || [];
+    listEl.innerHTML = "";
+    emptyEl.style.display = entries.length ? "none" : "block";
+    metaEl.innerHTML =
+      `База: <code>${data.db_path || ".cursor/autolog.db"}</code> · ` +
+      `записей: <span class="count">${entries.length}</span>` +
+      (data.query ? ` · поиск: <code>${escapeHtml(data.query)}</code>` : "") +
+      (data.project ? ` · проект: <code>${escapeHtml(data.project)}</code>` : "");
+
+    for (const e of entries) {
+      const div = document.createElement("div");
+      div.className = "entry";
+      const head = document.createElement("div");
+      head.className = "entry-head";
+      head.innerHTML =
+        `<div><div class="title">${escapeHtml(e.project_slug || "?")} · ${escapeHtml(e.hook || "")}` +
+        tagBadge(e.body || "") +
+        `</div><div class="preview">${escapeHtml(previewText(e.body || ""))}</div></div>` +
+        `<div class="entry-meta">#${e.id}<br>${formatTs(e.created_at)}</div>`;
+      const body = document.createElement("div");
+      body.className = "entry-body";
+      body.textContent = e.body || "";
+      head.addEventListener("click", () => div.classList.toggle("open"));
+      div.appendChild(head);
+      div.appendChild(body);
+      listEl.appendChild(div);
+    }
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  async function loadProjects() {
+    try {
+      const res = await fetch("/api/autolog/projects", { headers: authHeaders() });
+      if (!res.ok) return;
+      const data = await res.json();
+      const cur = projectEl.value;
+      projectEl.innerHTML = '<option value="">все проекты</option>';
+      for (const p of data.projects || []) {
+        const opt = document.createElement("option");
+        opt.value = p;
+        opt.textContent = p;
+        projectEl.appendChild(opt);
+      }
+      if (cur) projectEl.value = cur;
+    } catch (_) { /* ignore */ }
+  }
+
+  async function load() {
+    loadErr.style.display = "none";
+    metaEl.textContent = "Загрузка…";
+    const params = new URLSearchParams();
+    const project = projectEl.value.trim();
+    const q = qEl.value.trim();
+    const limit = limitEl.value || "50";
+    if (project) params.set("project", project);
+    if (q) params.set("q", q);
+    params.set("limit", limit);
+    try {
+      const res = await fetch("/api/autolog?" + params.toString(), { headers: authHeaders() });
+      if (res.status === 401) {
+        throw new Error("Нужен VIEWER_AUTH_TOKEN (localStorage viewer_token)");
+      }
+      if (!res.ok) {
+        throw new Error("HTTP " + res.status);
+      }
+      renderEntries(await res.json());
+    } catch (err) {
+      loadErr.textContent = String(err.message || err);
+      loadErr.style.display = "block";
+      metaEl.textContent = "Ошибка загрузки";
+      listEl.innerHTML = "";
+    }
+  }
+
+  refreshBtn.addEventListener("click", load);
+  projectEl.addEventListener("change", load);
+  limitEl.addEventListener("change", load);
+  qEl.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") load();
+  });
+
+  loadProjects().then(load);
+})();
+</script>
+</body>
+</html>

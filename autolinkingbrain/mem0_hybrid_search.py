@@ -78,8 +78,9 @@ def _load_channel_rows(mem0, user_id: str) -> list[dict]:
     if cached and now - cached[0] < _cache_ttl_sec():
         return cached[1]
 
-    raw = mem0.get_all(filters={"user_id": user_id}, top_k=_fetch_cap())
-    rows = _normalize_rows(raw)
+    from autolinkingbrain.mem0_fetch import fetch_channel_rows
+
+    rows = fetch_channel_rows(user_id, top_k=_fetch_cap(), db=mem0)
     _CHANNEL_CACHE[user_id] = (now, rows)
     return rows
 
@@ -176,13 +177,20 @@ def hybrid_mem_search(
         return []
 
     pool = _candidate_pool(top_k)
-    thr = max(0.0, min(float(threshold), 0.5))
-
-    raw_vec = mem0.search(q, filters={"user_id": user_id}, top_k=pool, threshold=thr)
-    vector_rows = normalize_search_results(raw_vec)
-
     channel_rows = _load_channel_rows(mem0, user_id)
     bm25_rows = _bm25_search(channel_rows, q, pool)
+
+    from autolinkingbrain.mem0_fetch import _fetch_use_sqlite
+
+    if _fetch_use_sqlite():
+        return bm25_rows[:top_k]
+
+    thr = max(0.0, min(float(threshold), 0.5))
+    try:
+        raw_vec = mem0.search(q, filters={"user_id": user_id}, top_k=pool, threshold=thr)
+        vector_rows = normalize_search_results(raw_vec)
+    except Exception:
+        vector_rows = []
 
     if vector_rows and bm25_rows:
         return _rrf_fuse(vector_rows, bm25_rows, top_k=top_k)

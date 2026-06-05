@@ -5,12 +5,16 @@
       "args": ["/path/to/autolinkingbrain/brain_server.py"],
       "cwd": "${workspaceFolder}",
       "env": {
-        "MEM0_TELEMETRY": "false"
+        "MEM0_TELEMETRY": "false",
+        "MEM0_PRIVACY_FILTER": "1",
+        "MEM0_PRIVACY_BLOCK": "1",
+        "MEM0_AUTOLOG_BACKEND": "sqlite"
       }
     },
     "codegraph": {
       "command": "codegraph",
       "args": ["serve", "--mcp"]
     }
-  }
+  },
+  "_comment_profiles": "Repo default: standard. Your device: config/local/install.yaml (profile: full). CLI: brain.py mcp install [--profile full]"
 }

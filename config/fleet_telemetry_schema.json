@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "BrainFleetTelemetry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "install_ref", "device_ref", "ts"],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "install_ref": { "type": "string", "maxLength": 64, "pattern": "^ref_[a-f0-9]{12}$" },
+    "device_ref": { "type": "string", "maxLength": 64, "pattern": "^ref_[a-f0-9]{12}$" },
+    "project_ref": { "type": "string", "maxLength": 64, "pattern": "^ref_[a-f0-9]{12}$" },
+    "ts": { "type": "string", "maxLength": 32 },
+    "health_status": { "type": "string", "maxLength": 32 },
+    "coverage_status": { "type": "string", "maxLength": 32 },
+    "analysis_status": { "type": "string", "maxLength": 32 },
+    "fact_count": { "type": "integer", "minimum": 0, "maximum": 10000000 },
+    "entity_count": { "type": "integer", "minimum": 0, "maximum": 10000000 },
+    "event_count": { "type": "integer", "minimum": 0, "maximum": 10000000 },
+    "profile": { "type": "string", "maxLength": 32 },
+    "host_kind": { "type": "string", "maxLength": 32 }
+  }
+}

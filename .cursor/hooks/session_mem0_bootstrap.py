@@ -63,14 +63,23 @@ def main() -> None:
         return
 
     try:
-        from autolinkingbrain.cursor_agent import sync_project_rules_for_workspace_roots
+        from autolinkingbrain.cursor_agent import sync_global_agent_assets
 
-        sync_project_rules_for_workspace_roots(
-            data.get("workspace_roots") if isinstance(data.get("workspace_roots"), list) else None,
-            cwd=str(data.get("cwd") or "") or None,
-        )
+        sync_global_agent_assets(force=False)
     except Exception:
         pass
+
+    _protocol_off = os.environ.get("MEM0_SESSION_PROTOCOL", "1").strip().lower() in ("0", "false", "no")
+    protocol = ""
+    if not _protocol_off:
+        try:
+            from autolinkingbrain.cursor_agent import compile_always_apply_rules_context
+
+            protocol = compile_always_apply_rules_context(
+                max_chars=int(os.environ.get("MEM0_SESSION_PROTOCOL_MAX_CHARS", "4500")),
+            )
+        except Exception:
+            protocol = ""
 
     if _OFF:
         print("{}")
@@ -85,7 +94,11 @@ def main() -> None:
         cwd=cwd or None,
     )
     if not slugs:
-        print("{}")
+        if protocol:
+            out = {"additional_context": protocol}
+            print(json.dumps(out, ensure_ascii=False))
+        else:
+            print("{}")
         return
 
     per_slug = max(4, _MAX_PROJECT // max(1, len(slugs)))
@@ -139,7 +152,10 @@ def main() -> None:
             f"global channel `{_GLOBAL_ID}`.\n"
             "These lines are **already in the vector DB**; for live search use MCP `retrieveChain` / `checkProjectHealth`.\n\n"
         )
-        body = header + _format_block(f"Project channels ({slug_label})", proj_rows)
+        body = ""
+        if protocol:
+            body = protocol.rstrip() + "\n\n---\n\n"
+        body += header + _format_block(f"Project channels ({slug_label})", proj_rows)
         body += _format_block(f"Global channel ({_GLOBAL_ID})", glob_rows)
         if len(body) > _MAX_TOTAL:
             body = body[: _MAX_TOTAL - 80] + "\n\n… [Mem0 bootstrap truncated]\n"

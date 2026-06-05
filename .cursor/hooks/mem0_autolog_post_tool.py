@@ -308,8 +308,8 @@ def main() -> None:
         print("{}")
         return
 
-    project = _project_from_payload(data, tool_input)
     tool_name, tool_input, tool_output = _extract_fields(data)
+    project = _project_from_payload(data, tool_input)
     summary = _summarize_line(tool_name, tool_input, tool_output)
     if not summary:
         _write_last(
@@ -345,38 +345,58 @@ def main() -> None:
         detail=f"tool={tool_norm or tool_name}",
     )
 
+    stored_sqlite = False
+    stored_mem0 = False
+    uids: list[str] = []
     try:
-        from mem0 import Memory
+        from autolinkingbrain.autolog_store import append_entry, writes_to_mem0, writes_to_sqlite
 
-        from autolinkingbrain.mem0_settings import mem0_vector_config
-
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            mem = Memory.from_config(config_dict=mem0_vector_config())
-        uids = _target_user_ids(project)
-        for uid in uids:
-            mem.add(safe_line, user_id=uid, infer=False)
-        try:
-            from autolinkingbrain.mem0_hybrid_search import invalidate_channel_cache
-
-            for uid in uids:
-                invalidate_channel_cache(uid)
-        except Exception:
-            pass
-        try:
-            from autolinkingbrain.mem0_kb_log import log_mem0
-
-            log_mem0(
-                "write",
-                "hook.postToolUse.mem_add",
-                user_ids=uids,
-                tool=tool_name,
-                infer=False,
+        if writes_to_sqlite():
+            append_entry(
+                project,
+                "hook:postToolUse",
+                safe_line,
+                meta={"tool": tool_name, "conversation_id": cid},
+                workspace_root=_ROOT,
             )
-        except Exception:
-            pass
+            stored_sqlite = True
+        if writes_to_mem0():
+            from mem0 import Memory
+
+            from autolinkingbrain.mem0_settings import mem0_vector_config
+
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                mem = Memory.from_config(config_dict=mem0_vector_config())
+            uids = _target_user_ids(project)
+            for uid in uids:
+                mem.add(safe_line, user_id=uid, infer=False)
+            try:
+                from autolinkingbrain.mem0_hybrid_search import invalidate_channel_cache
+
+                for uid in uids:
+                    invalidate_channel_cache(uid)
+            except Exception:
+                pass
+            try:
+                from autolinkingbrain.mem0_kb_log import log_mem0
+
+                log_mem0(
+                    "write",
+                    "hook.postToolUse.mem_add",
+                    user_ids=uids,
+                    tool=tool_name,
+                    infer=False,
+                )
+            except Exception:
+                pass
+            stored_mem0 = True
         _mark_written(project, line)
-        _write_last("ok_wrote", f"project={project!r} uids={uids} tool={tool_name!r}")
+        _write_last(
+            "ok_wrote",
+            f"project={project!r} sqlite={stored_sqlite} mem0={stored_mem0} "
+            f"uids={uids} tool={tool_name!r}",
+        )
     except Exception as e:
         _write_last("mem0_add_failed", f"project={project!r} err={repr(e)[:180]}")
 

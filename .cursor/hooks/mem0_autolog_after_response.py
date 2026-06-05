@@ -1,8 +1,8 @@
 """
 Cursor hook: afterAgentResponse — при важном ответе ассистента пишет сжатую запись в Mem0.
 
-По умолчанию **Ollama** (`MEM0_AUTOLOG_USE_OLLAMA=1`) делает короткую выжимку фактов на английском; при сбое
-или ответе NONE — откат на «строгий» отбор (`MEM0_AUTOLOG_STRICT=1`, см. MEM0_AUTOLOG_OLLAMA_FALLBACK).
+По умолчанию **без Ollama** (`MEM0_AUTOLOG_USE_OLLAMA=0`) — быстрые эвристики в SQLite/Mem0.
+При `MEM0_AUTOLOG_USE_OLLAMA=1` — короткая выжимка через Ollama; при сбое — откат (`MEM0_AUTOLOG_OLLAMA_FALLBACK`).
 
 Переменные: см. README (раздел про хук).
 """
@@ -33,8 +33,8 @@ _MAX_BODY = int(os.environ.get("MEM0_AUTOLOG_MAX_CHARS", "10000"))
 # Лимит всё равно нужен под окно эмбеддера (nomic и т.п. — ориентир ~8k токенов).
 _MEM0_SAFE_CHARS = int(os.environ.get("MEM0_AUTOLOG_MEM0_SAFE_CHARS", "7500"))
 _STRICT = os.environ.get("MEM0_AUTOLOG_STRICT", "1").strip().lower() not in ("0", "false", "no")
-# По умолчанию дистилляция включена; MEM0_AUTOLOG_USE_OLLAMA=0 — только эвристики.
-_USE_OLLAMA = os.environ.get("MEM0_AUTOLOG_USE_OLLAMA", "1").strip().lower() not in ("0", "false", "no")
+# По умолчанию без Ollama (быстрый hook); MEM0_AUTOLOG_USE_OLLAMA=1 — дистилляция через llama.
+_USE_OLLAMA = os.environ.get("MEM0_AUTOLOG_USE_OLLAMA", "0").strip().lower() in ("1", "true", "yes")
 _OLLAMA_FALLBACK = os.environ.get("MEM0_AUTOLOG_OLLAMA_FALLBACK", "1").strip().lower() not in (
     "0",
     "false",
@@ -427,44 +427,69 @@ def main() -> None:
         print("{}")
         return
 
+    stored_sqlite = False
+    stored_mem0 = False
+    uids: list[str] = []
     try:
-        from mem0 import Memory
+        from autolinkingbrain.autolog_store import append_entry, writes_to_mem0, writes_to_sqlite
 
-        from autolinkingbrain.mem0_settings import mem0_vector_config
-
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            mem = Memory.from_config(config_dict=mem0_vector_config())
-        uids = _user_ids_for_write(project)
-        for uid in uids:
-            # infer=False: без LLM-извлечения — длинный обзор не бьётся о context length llama3.2
-            mem.add(line, user_id=uid, infer=False)
-        try:
-            from autolinkingbrain.mem0_hybrid_search import invalidate_channel_cache
-
-            for uid in uids:
-                invalidate_channel_cache(uid)
-        except Exception:
-            pass
-        try:
-            from autolinkingbrain.mem0_kb_log import log_mem0
-
-            log_mem0(
-                "write",
-                "hook.afterAgentResponse.mem_add",
-                user_ids=uids,
-                infer=False,
-                tag=tag,
-                stored_chars=len(line),
+        if writes_to_sqlite():
+            append_entry(
+                project,
+                "hook:afterAgentResponse",
+                line,
+                meta={"tag": tag, "model": model, "conversation_id": cid},
+                workspace_root=_ROOT,
             )
-        except Exception:
-            pass
+            stored_sqlite = True
+        if writes_to_mem0():
+            _debug("WARN writing autolog to Mem0 (MEM0_AUTOLOG_ALLOW_MEM0=1) — prefer sqlite only")
+            from mem0 import Memory
+
+            from autolinkingbrain.mem0_settings import mem0_vector_config
+
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                mem = Memory.from_config(config_dict=mem0_vector_config())
+            uids = _user_ids_for_write(project)
+            for uid in uids:
+                mem.add(line, user_id=uid, infer=False)
+            try:
+                from autolinkingbrain.mem0_hybrid_search import invalidate_channel_cache
+
+                for uid in uids:
+                    invalidate_channel_cache(uid)
+            except Exception:
+                pass
+            try:
+                from autolinkingbrain.mem0_kb_log import log_mem0
+
+                log_mem0(
+                    "write",
+                    "hook.afterAgentResponse.mem_add",
+                    user_ids=uids,
+                    infer=False,
+                    tag=tag,
+                    stored_chars=len(line),
+                )
+            except Exception:
+                pass
+            stored_mem0 = True
         _dedupe_mark_written(project, line)
-        _write_last_run("ok_wrote", project, len(text), extra=f"uids={uids}")
-        _debug(f"OK wrote len={len(line)} uids={uids} project={project}")
+        backend = os.environ.get("MEM0_AUTOLOG_BACKEND", "sqlite")
+        _write_last_run(
+            "ok_wrote",
+            project,
+            len(text),
+            extra=f"sqlite={stored_sqlite} mem0={stored_mem0} backend={backend}",
+        )
+        _debug(
+            f"OK wrote len={len(line)} sqlite={stored_sqlite} mem0={stored_mem0} "
+            f"uids={uids} project={project}"
+        )
     except Exception as e:
-        _write_last_run("mem0_add_failed", project, len(text), extra=repr(e)[:200])
-        _debug(f"FAIL mem0 add {e!r} project={project}")
+        _write_last_run("autolog_write_failed", project, len(text), extra=repr(e)[:200])
+        _debug(f"FAIL autolog write {e!r} project={project}")
 
     print("{}")
 

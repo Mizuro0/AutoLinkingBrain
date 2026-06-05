@@ -15,12 +15,19 @@ if _REPO_ROOT not in sys.path:
 from autolinkingbrain.mcp_full_log import install_mcp_full_capture
 
 install_mcp_full_capture(_REPO_ROOT)
-warnings.filterwarnings("ignore")
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 os.environ.setdefault("MEM0_TELEMETRY", "false")
+os.environ.setdefault("MEM0_FETCH_SQLITE", "1")
 
-from autolinkingbrain.cursor_agent import sync_cursor_agent_assets
+from autolinkingbrain.brain_config import load_config
 
-sync_cursor_agent_assets()
+load_config()
+
+from autolinkingbrain.brain_install import ensure_mcp_servers
+
+# Agent asset sync (skill/rules) is NOT run here — avoids disk I/O on every MCP connect.
+# Use: python brain.py install | sync-agent | sessionStart hook | first MCP tool (roots → rules).
+ensure_mcp_servers()
 
 try:
     from mcp.server.fastmcp import FastMCP
