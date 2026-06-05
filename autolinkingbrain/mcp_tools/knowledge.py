@@ -75,6 +75,7 @@ def register(mcp: FastMCP, mctx: McpContext) -> None:
             "mcp.storeKnowledge",
             scope=scope,
             user_ids=u_ids,
+            stored_chars=len(enriched_text),  # cloud-agent output tokens spent to write the fact
             tech=tech,
             scenario=scenario,
             project_id=project_id,

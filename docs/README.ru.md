@@ -133,6 +133,8 @@ python brain.py start   # Viewer → вкладка Ops (клавиша O)
 
 События: `.cursor/brain_events.jsonl` (не попадают в контекст агента). Ops показывает analysis status при `VIEWER_PROJECT_ROOT`.
 
+**ROI (v2):** net-оценка токенов **облачного агента Cursor** — инъекция контекста (input) и `storeKnowledge` (output) вычитаются из контрфактуальной выгоды переиспользования памяти; Ollama-эмбеддинг бесплатен. Knobs: `MEM0_METRICS_CHARS_PER_TOKEN`, `MEM0_METRICS_REUSE_MULT_*`, `MEM0_METRICS_USD_PER_1M_*`.
+
 **Fleet Hub (только admin):** санitized telemetry на VPS — см. [FLEET_DEPLOY.md](FLEET_DEPLOY.md), `python brain.py fleet push`.
 
 Быстрый старт: [QUICKSTART.ru.md](QUICKSTART.ru.md). Протокол: [AGENT_PROTOCOL.md](AGENT_PROTOCOL.md).

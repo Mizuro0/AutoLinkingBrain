@@ -116,6 +116,7 @@ def main() -> None:
         for slug in slugs:
             project_uid = f"project_{slug}"
             raw_p = mem.get_all(filters={"user_id": project_uid}, top_k=max(per_slug * 2, 40))
+            top_p = sorted(_rows(raw_p), key=_sort_key, reverse=True)[:per_slug]
             try:
                 from autolinkingbrain.mem0_kb_log import count_get_all_rows, log_mem0
 
@@ -125,12 +126,14 @@ def main() -> None:
                     user_id=project_uid,
                     top_k=max(per_slug * 2, 40),
                     rows=count_get_all_rows(raw_p),
+                    ret_chars=sum(len((r.get("memory") or "")) for r in top_p),  # injected chars
                 )
             except Exception:
                 pass
-            proj_rows.extend(sorted(_rows(raw_p), key=_sort_key, reverse=True)[:per_slug])
+            proj_rows.extend(top_p)
 
         raw_g = mem.get_all(filters={"user_id": _GLOBAL_ID}, top_k=max(_MAX_GLOBAL * 2, 28))
+        glob_rows = sorted(_rows(raw_g), key=_sort_key, reverse=True)[:_MAX_GLOBAL]
         try:
             from autolinkingbrain.mem0_kb_log import count_get_all_rows, log_mem0
 
@@ -140,10 +143,10 @@ def main() -> None:
                 user_id=_GLOBAL_ID,
                 top_k=max(_MAX_GLOBAL * 2, 28),
                 rows=count_get_all_rows(raw_g),
+                ret_chars=sum(len((r.get("memory") or "")) for r in glob_rows),  # injected chars
             )
         except Exception:
             pass
-        glob_rows = sorted(_rows(raw_g), key=_sort_key, reverse=True)[:_MAX_GLOBAL]
 
         slug_label = ", ".join(f"`{s}`" for s in slugs)
         header = (

@@ -294,17 +294,6 @@ class McpContext:
         for u_id in search_ids:
             fetch_k = top_k_per_scope * fetch_mult if use_facts_only else top_k_per_scope
             rows = self.mem_search(query, u_id, top_k=fetch_k, threshold=thr)
-            log_mem0(
-                "read",
-                "mcp.retrieveChain.search",
-                user_id=u_id,
-                query_preview=(query[:200] + "…") if len(query) > 200 else query,
-                hits=len(rows),
-                hybrid=hybrid_search_enabled(),
-                facts_only=use_facts_only,
-            )
-            if not rows:
-                continue
             lines: list[str] = []
             for m in rows:
                 txt = (m.get("memory") or "").strip()
@@ -316,9 +305,19 @@ class McpContext:
                 lines.append(txt)
                 if len(lines) >= top_k_per_scope:
                     break
-            if not lines:
-                continue
-            res.append(f"=== FROM {u_id.upper()} ===\n" + "\n".join(lines))
+            block = (f"=== FROM {u_id.upper()} ===\n" + "\n".join(lines)) if lines else ""
+            log_mem0(
+                "read",
+                "mcp.retrieveChain.search",
+                user_id=u_id,
+                query_preview=(query[:200] + "…") if len(query) > 200 else query,
+                hits=len(rows),
+                ret_chars=len(block),  # real chars injected into the Cursor agent context
+                hybrid=hybrid_search_enabled(),
+                facts_only=use_facts_only,
+            )
+            if block:
+                res.append(block)
         if res:
             if filtered_total and use_facts_only:
                 res.append(
